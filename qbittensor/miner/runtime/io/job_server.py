@@ -1,7 +1,6 @@
 import bittensor as bt
 from typing import Any, Dict, Optional
 from qbittensor.miner.runtime.types import (
-    Pricing as _PricingModel,
     PatchBackendRequest as _PatchBackendRequestModel,
     MinerStatus as _MinerStatus,
 )
@@ -126,17 +125,11 @@ def send_status_to_job_server(registry, status_data: dict) -> None:
             status_enum = _MinerStatus.ONLINE
 
         accepting_jobs = (pending_count < getattr(registry, "_max_inflight", 1000))
-        pricing_model = _PricingModel(
-            per_task=snake_price.get("per_task"),
-            per_shot=snake_price.get("per_shot"),
-            per_minute=snake_price.get("per_minute"),
-        )
         payload_model = _PatchBackendRequestModel(
             accepting_jobs=accepting_jobs,
             status=status_enum,
             queue_depth=queue_depth,
             metadata=metadata,
-            pricing=pricing_model,
         )
         try:
             bt.logging.info(f"[job_server] Backend status ready (accepting_jobs={accepting_jobs}, queue_depth={queue_depth}, status={status_enum})")

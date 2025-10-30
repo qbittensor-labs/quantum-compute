@@ -12,12 +12,6 @@ class UploadDataResponse(BaseModel):
     id: str
 
 
-class Pricing(BaseModel):
-    per_task: float | None
-    per_shot: float | None
-    per_minute: float | None
-
-
 class MinerStatus(Enum):
     ONLINE = "Online"
     OFFLINE = "Offline"
@@ -29,7 +23,6 @@ class PatchBackendRequest(BaseModel):
     status: MinerStatus
     queue_depth: int
     metadata: Dict[str, Any]
-    pricing: Pricing
 
 
 class _TrackedJob:

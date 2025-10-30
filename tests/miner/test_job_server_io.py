@@ -28,20 +28,13 @@ def test_build_availability_fields():
     assert isinstance(depth, int)
 
 
-def test_build_pricing_fields_snake_and_camel():
-    snake = js._build_pricing_fields({"per_task": 1, "per_shot": 2, "per_minute": 3})
-    assert snake == {"per_task": 1, "per_shot": 2, "per_minute": 3}
-    camel = js._build_pricing_fields({"perTask": 1, "perShot": 2, "perMinute": 3})
-    assert camel == {"per_task": 1, "per_shot": 2, "per_minute": 3}
-
-
 def test_send_status_to_job_server_sends_patch(monkeypatch):
     reg = DummyRegistry()
     identity = MinerIdentity(device_id="d1", provider="mock", vendor=None, device_type="SIMULATOR")
     availability = AvailabilityStatus(availability="ONLINE", is_available=True)
     caps = Capabilities(num_qubits=8, basis_gates=["x"], extras=None)
     status_data = {
-        "identity": identity, "availability": availability, "capabilities": caps, "pricing": {"perTask": 0.01}
+        "identity": identity, "availability": availability, "capabilities": caps,
     }
     # include pending counts for API
     status_data["_pending_count"] = 0
@@ -49,7 +42,6 @@ def test_send_status_to_job_server_sends_patch(monkeypatch):
     js.send_status_to_job_server(reg, status_data)
     sent = reg._request_manager.last
     assert sent and sent.get("endpoint") == "backends"
-    assert sent["json"]["pricing"]["per_task"] == 0.01
 
 
 def test_send_error_to_job_server_patches_execution(monkeypatch):

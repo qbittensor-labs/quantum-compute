@@ -54,12 +54,12 @@ def test_status_update_payload(monkeypatch, tmp_db):
     try:
         status_data = jr._status_queue.get_nowait()
     except Exception:
-        status_data = {"identity": None, "availability": None, "capabilities": None, "pricing": None}
+        status_data = {"identity": None, "availability": None, "capabilities": None}
     send_status_to_job_server(jr, status_data)
 
     assert captured.get("url", "").endswith("/backends")
     body = captured.get("json", {})
-    for key in ("accepting_jobs", "status", "queue_depth", "metadata", "pricing"):
+    for key in ("accepting_jobs", "status", "queue_depth", "metadata"):
         assert key in body
 
 
