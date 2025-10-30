@@ -63,12 +63,13 @@ class Validator(BaseValidatorNeuron):
             except IndexError:
                 bt.logging.trace(f"| {current_thread} | ❌  Forward pass failed to find the next miner, returning")
                 return
-            bt.logging.info(f"| {current_thread} | 🔗  Next miner '{next_miner}'")
 
             # Get synapse and original compute request
             synapse, original_compute_request = self.synapse_manager.get_synapse(next_miner)
             if synapse is None:
                 sleep(1)
+                
+        bt.logging.info(f"| {current_thread} | 🔗  Next onboarded miner '{next_miner}'")
 
         # Query the metagraph
         response: List[Any] = self.dendrite.query(

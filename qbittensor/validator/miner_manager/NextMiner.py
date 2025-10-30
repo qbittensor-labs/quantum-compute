@@ -22,7 +22,6 @@ class NextMiner:
         try:
             hotkey: str = self.metagraph.hotkeys[self._index]
             axon: bt.AxonInfo = self._get_axon_from_metagraph()
-            bt.logging.debug(f"Axon type: {type(axon)} for miner {hotkey} at index {self._index}")
             return BasicMiner(hotkey=hotkey, uid=self._index, axon=axon)
         finally:
             self._increment_miner_index()

@@ -48,11 +48,10 @@ class SynapseManager:
 
         endpoint = "executions"
         params = {"miner_hotkey": miner_hotkey}
-        response: requests.Response = self.request_manager.get(endpoint, params=params)
+        response: requests.Response = self.request_manager.get(endpoint, params=params, ignore_codes=[404])
 
         # Handle no-data codes
-        if response.status_code == 401 or response.status_code == 404:
-            bt.logging.trace(f"🚫 This node is not an onboarded miner")
+        if response.status_code == 404:
             return None
 
         if response.status_code == 204:

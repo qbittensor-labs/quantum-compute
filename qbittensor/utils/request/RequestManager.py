@@ -50,45 +50,45 @@ class RequestManager:
             sys.exit(1)
         self._api_version: str = f"v{api_version}"
 
-    def get(self, endpoint: str, params: Dict = {}, additional_headers: List[Tuple[str, str]] = []) -> requests.Response:
+    def get(self, endpoint: str, params: Dict = {}, additional_headers: List[Tuple[str, str]] = [], ignore_codes: List[int] = []) -> requests.Response:
         """Make a GET request to the job server with signed header"""
         headers = self._get_header()
         for key, value in additional_headers:
             headers[key] = value
         full_url: str = self._build_url(endpoint)
         response: requests.Response = self._session.get(full_url, headers=headers, params=params, timeout=self._timeout)
-        self.check_error_code(response, full_url, "GET")
+        self.check_error_code(response, full_url, "GET", ignore_codes=ignore_codes)
         return response
 
-    def post(self, endpoint: str, json: Dict = {}, params: Dict = {}, additional_headers: List[Tuple[str, str]] = []) -> requests.Response:
+    def post(self, endpoint: str, json: Dict = {}, params: Dict = {}, additional_headers: List[Tuple[str, str]] = [], ignore_codes: List[int] = []) -> requests.Response:
         """Make a POST request to the job server with signed header"""
         headers = self._get_header()
         for key, value in additional_headers:
             headers[key] = value
         full_url: str = self._build_url(endpoint)
         response: requests.Response = self._session.post(full_url, json=json, headers=headers, params=params, timeout=self._timeout)
-        self.check_error_code(response, full_url, "POST")
+        self.check_error_code(response, full_url, "POST", ignore_codes=ignore_codes)
         return response
-    
-    def post_telemetry(self, endpoint: str, json: Dict = {}, params: Dict = {}) -> requests.Response:
+
+    def post_telemetry(self, endpoint: str, json: Dict = {}, params: Dict = {}, ignore_codes: List[int] = []) -> requests.Response:
         """Make a POST request to the job server with signed header"""
         headers = self._get_header()
         headers["X-Service-Name"] = self._service_name
         headers["X-Network"] = self._network
         full_url: str = self._build_telemetry_url(endpoint)
         response: requests.Response = self._session.post(full_url, json=json, headers=headers, params=params, timeout=self._timeout)
-        self.check_error_code(response, full_url, "POST")
+        self.check_error_code(response, full_url, "POST", ignore_codes=ignore_codes)
         return response
 
-    def patch(self, endpoint: str, json: Dict, params: Dict = {}) -> requests.Response:
+    def patch(self, endpoint: str, json: Dict, params: Dict = {}, ignore_codes: List[int] = []) -> requests.Response:
         """Make a PATCH request to the job server with signed header"""
         headers = self._get_header()
         full_url: str = self._build_url(endpoint)
         response: requests.Response = self._session.patch(full_url, json=json, headers=headers, params=params, timeout=self._timeout)
-        self.check_error_code(response, full_url, "PATCH")
+        self.check_error_code(response, full_url, "PATCH", ignore_codes=ignore_codes)
         return response
 
-    def check_error_code(self, response: requests.Response, url: str, method: str) -> bool:
+    def check_error_code(self, response: requests.Response, url: str, method: str, ignore_codes: List[int] = []) -> bool:
         """Return true if status code is non-200"""
         status_code = response.status_code
         is_error_code = status_code < 200 or status_code > 299
@@ -100,10 +100,12 @@ class RequestManager:
                 error_message = error_data.get('message', error_message)
             except (ValueError, KeyError):
                 error_message = response.text if response.text else error_message
-            
-            bt.logging.trace(f"❗ Received error from server for '{method} {url}' code: {status_code} - {error_message}")
+
+            if status_code not in ignore_codes:
+                bt.logging.trace(f"❗ Received error from server for '{method} {url}' code: {status_code} - {error_message}")
         else:
-            bt.logging.trace(f"✅ {method} request to '{url}' successful with status code {status_code}")
+            if status_code not in ignore_codes:
+                bt.logging.trace(f"✅ {method} request to '{url}' successful with status code {status_code}")
         return is_error_code
     
     def _build_url(self, endpoint: str) -> str:
