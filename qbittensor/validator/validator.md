@@ -70,13 +70,20 @@ cd quantum-compute
 pip install -e .
 ```
 
-### 6. Install PM2 (if not already installed)
+### 6. Install Requirements
+
+Install all required dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+### 7. Install PM2 (if not already installed)
 
 ```bash
 npm install -g pm2
 ```
 
-### 7. Start validator
+### 8. Start validator
 
 ```bash
 pm2 start --name your_process_name_here \
