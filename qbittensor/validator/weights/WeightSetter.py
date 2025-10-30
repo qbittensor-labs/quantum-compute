@@ -9,7 +9,7 @@ from qbittensor.utils.Timer import Timer
 from qbittensor.utils.request.RequestManager import RequestManager
 from qbittensor.validator.weights.WeightPublisher import WeightPublisher
 
-DISTRIBUTION_KEY_UID = 1
+DISTRIBUTION_KEY_UID = 220
 LOG_NS = "🏋  [setting weights]"
 REG_MAINTAINENCE_INCENTIVE = 0.001
 BURN_PERCENTAGE = 0.90
@@ -39,11 +39,8 @@ class WeightSetter:
     
     def check_timer(self) -> None:
         """Check if it's time to run the weight setting process."""
-        if self.network == "local" or self.network == "unit_test":
-            self.timer.check_timer()
-        else:
-            bt.logging.debug(f"{LOG_NS} skipping timer check on network={self.network}.")
-
+        bt.logging.debug(f"{LOG_NS} checking timer on network={self.network}.")
+        self.timer.check_timer()
 
     def _set_weights(self) -> None:
         bt.logging.info(f"{LOG_NS} start")
