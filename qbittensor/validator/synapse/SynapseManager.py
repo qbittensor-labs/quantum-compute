@@ -51,7 +51,7 @@ class SynapseManager:
         response: requests.Response = self.request_manager.get(endpoint, params=params)
 
         # Handle no-data codes
-        if response.status_code == 401:
+        if response.status_code == 401 or response.status_code == 404:
             bt.logging.trace(f"🚫 This node is not an onboarded miner")
             return None
 
