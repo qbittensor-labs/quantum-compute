@@ -65,7 +65,13 @@ class Scorer:
                     bt.logging.trace(f"| {current_thread} | ⚠️  No finished executions in this response")
                     continue
 
-                bt.logging.trace(f"| {current_thread} | 💼  Synapse has {len(synapse.finished_executions)} finished executions")
+                num_pending = sum(1 for exec in synapse.finished_executions if exec.status == ExecutionStatus.PENDING)
+                num_queued = sum(1 for exec in synapse.finished_executions if exec.status == ExecutionStatus.QUEUED)
+                num_running = sum(1 for exec in synapse.finished_executions if exec.status == ExecutionStatus.RUNNING)
+                num_failed = sum(1 for exec in synapse.finished_executions if exec.status == ExecutionStatus.FAILED)
+                num_completed = sum(1 for exec in synapse.finished_executions if exec.status == ExecutionStatus.COMPLETED)
+
+                bt.logging.trace(f"| {current_thread} | 📊  Finished executions detail\n----------------------------\n⭐  Number of completed executions: {num_completed}\n🚩  Number of failed executions: {num_failed}\n▶️  Number of running executions: {num_running}\n⏳   Number of queued executions: {num_queued}\n⏸️   Number of pending executions: {num_pending}\n----------------------------")
 
                 self._metrics.upsert_last_circuit(next_miner.hotkey, synapse.last_circuit)
 
@@ -78,10 +84,9 @@ class Scorer:
                             miner_hotkey=next_miner.hotkey,
                         )
                         if execution.status == ExecutionStatus.COMPLETED:
-                            bt.logging.trace(f"| {current_thread} | ✅  Processing completed execution execution_id={execution.execution_id}")
                             self._record_time_received(next_miner.hotkey, execution.execution_id)  # Update local database
                             self._patch_job_complete(execution)  # Send to job server
-                            bt.logging.trace(f"| {current_thread} | ✅  Valid miner response with execution_id {execution.execution_id}")
+                            bt.logging.trace(f"| {current_thread} | ✅  Miner reported successfuly completion for execution_id {execution.execution_id}")
                         elif execution.status == ExecutionStatus.FAILED:
                             error_msg = execution.errorMessage if execution.errorMessage else "Miner reported failure"
                             self._patch_job_rejected(execution.execution_id, error_msg)  # Send to job server
