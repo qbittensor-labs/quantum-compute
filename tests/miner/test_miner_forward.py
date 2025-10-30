@@ -8,7 +8,7 @@ import bittensor as bt
 @pytest.fixture
 def setup_env(monkeypatch):
     """Set up environment for testing."""
-    monkeypatch.setenv("QBRAID_DRY_RUN", "1")
+    monkeypatch.setenv("PROVIDER", "mock")
     monkeypatch.setenv("JOB_SERVER_URL", "http://127.0.0.1:9999")
     
 

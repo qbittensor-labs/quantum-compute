@@ -5,7 +5,7 @@ from neurons.miner import Miner
 
 def test_miner_initializes_with_mock_components(monkeypatch):
     """Test that miner can initialize with mocked bittensor components."""
-    monkeypatch.setenv("QBRAID_DRY_RUN", "1")
+    monkeypatch.setenv("PROVIDER", "mock")
     monkeypatch.setattr(bt.logging, "set_config", Mock())
     
     mock_wallet = Mock()
@@ -66,7 +66,7 @@ def test_miner_initializes_with_mock_components(monkeypatch):
 
 def test_miner_sets_up_job_registry(monkeypatch):
     """Test that miner properly initializes JobRegistry."""
-    monkeypatch.setenv("QBRAID_DRY_RUN", "1")
+    monkeypatch.setenv("PROVIDER", "mock")
     monkeypatch.setattr(bt.logging, "set_config", Mock())
     
     mock_wallet = Mock()
@@ -103,7 +103,7 @@ def test_miner_sets_up_job_registry(monkeypatch):
 
 def test_miner_initializes_budget_components(monkeypatch):
     """Test that miner properly sets up budget management."""
-    monkeypatch.setenv("QBRAID_DRY_RUN", "1")
+    monkeypatch.setenv("PROVIDER", "mock")
     monkeypatch.setenv("EPOCH_BUDGET_USD", "500.0")
     monkeypatch.setenv("PROFIT_GUARD_USD", "50.0")
     monkeypatch.setattr(bt.logging, "set_config", Mock())

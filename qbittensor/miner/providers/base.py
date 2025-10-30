@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class Device(BaseModel):
     device_id: str = Field(description="Unique device identifier on the provider")
-    provider: str = Field(description="Provider key (e.g., qbraid, aws, ibm, ionq, quantinuum)")
+    provider: str = Field(description="Provider key")
     vendor: Optional[str] = Field(default=None, description="Hardware vendor name if distinct from provider")
     device_type: str = Field(description="QPU | SIMULATOR")
 
@@ -28,7 +28,7 @@ class BaseExecutionStatus(BaseModel):
 
 
 class JobReceipt(BaseModel):
-    provider: str = Field(description="Provider key (e.g., qbraid, aws, ibm)")
+    provider: str = Field(description="Provider key")
     provider_job_id: str = Field(description="Provider-side job identifier")
     status: str = Field(description="COMPLETED | FAILED | CANCELLED | RUNNING | QUEUED | UNKNOWN")
     device_id: str = Field(description="Target device id")
@@ -43,10 +43,10 @@ class MinerIdentity(BaseModel):
     """Identity for the miner's bound device."""
 
     device_id: Optional[str] = Field(
-        default=None, description="Unique device identifier on the provider (e.g., qbraid_id)"
+        default=None, description="Unique device identifier on the provider"
     )
     provider: Optional[str] = Field(
-        default=None, description="Provider key (e.g., qbraid, aws, ibm, ionq, quantinuum)"
+        default=None, description="Provider key"
     )
     vendor: Optional[str] = Field(
         default=None, description="Hardware vendor name if distinct from provider"
