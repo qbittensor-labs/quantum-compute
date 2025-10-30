@@ -1,0 +1,12 @@
+[run]
+source =
+    qbittensor/miner
+    qbittensor/validator
+    qbittensor/utils
+
+[report]
+omit =
+    qbittensor/utils/config.py
+    qbittensor/utils/logging.py
+    qbittensor/utils/misc.py
+    qbittensor/utils/uids.py
