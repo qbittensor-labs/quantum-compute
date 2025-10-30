@@ -127,6 +127,9 @@ class Scorer:
 
     def _patch(self, execution_id: str, body: Dict) -> None:
         """Helper function to patch the job server"""
+        if execution_id == COLLECT_SYNAPSE_ID:
+            return
+        bt.logging.debug(f"📌 Patching job server for execution_id {execution_id} with body {body}")
         endpoint: str = f"executions/{execution_id}"
         try:
             self.request_manager.patch(endpoint, body)
