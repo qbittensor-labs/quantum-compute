@@ -30,7 +30,6 @@ With this vision in mind, let's explore participation.
 
 Critical to all of this is quantum compute capacity. This subnet relies on quantum computer capacity, with as few layers of middlemen as possible. This approach enables us to ensure that the quantum compute resources are being faithfully used, while ensuring that costs are not overly inflated through layers of middlemen. In this vein, miners of the Quantum Compute subnet must own or operate a physical quantum computer capable of executing gate-based quantum circuits using OpenQASM 2.0/3.0, or have a direct and documented partnership with an owner/operator.
 
-For technical integration details see [qbittensor/miner/miner.md](qbittensor/miner/miner.md).
 
 ## How to Mine
 
@@ -38,9 +37,9 @@ If you own or operate a quantum computer, or are directly and formally partnered
 
 Begin by reaching out to us at support@openquantum.com. If you meet the initial requirements, we will quickly set up a meeting to talk through the process and, if appropriate, we will begin the rigorous onboarding process.
 
-For provider implementation steps and environment configuration, see [qbittensor/miner/miner.md](qbittensor/miner/miner.md).
-
 Building on accessibility, let's further explore the service provided to end users.
+
+For technical integration details see [miner.md](qbittensor/miner/miner.md).
 
 ## How Much Does It Cost?
 
