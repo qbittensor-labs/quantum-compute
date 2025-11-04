@@ -3,7 +3,8 @@ import time
 import typing
 import bittensor as bt
 from typing import List, Tuple
-
+import argparse
+from types import SimpleNamespace
 import requests
 
 # Bittensor Miner Template:
@@ -229,6 +230,18 @@ class Miner(BaseMinerNeuron):
 
 # This is the main function, which runs the miner.
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    Miner.add_args(parser)
+    config = bt.config(parser)
+
+     # Set blacklist config to avoid security warnings
+    if not hasattr(config, 'blacklist') or config.blacklist is None:
+        config.blacklist = bt.config()
+        if config.blacklist is None:
+            config.blacklist = SimpleNamespace()
+    config.blacklist.allow_non_registered = False
+    config.blacklist.force_validator_permit = True
+    
     with Miner() as miner:
         miner.jobs.start()
         while True:
