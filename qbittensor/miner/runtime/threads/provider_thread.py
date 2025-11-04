@@ -94,6 +94,7 @@ def poll_once(registry) -> None:
             except Exception:
                 pass
             continue
+        old_status = tracked.last_status
         tracked.last_status = status.status
 
         try:
@@ -114,7 +115,8 @@ def poll_once(registry) -> None:
                 try:
                     tsvc.miner_record_execution_status_change(
                         execution_id=execution_id,
-                        status=status.status,
+                        new_status=status.status,
+                        old_status=old_status,
                         miner_uid=miner_uid,
                         miner_hotkey=miner_hotkey,
                     )
