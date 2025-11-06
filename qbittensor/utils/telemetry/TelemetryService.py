@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 import queue
 import threading
 
+from qbittensor.protocol import COLLECT_SYNAPSE_ID
 from qbittensor.utils.request.RequestManager import RequestManager
 from qbittensor.utils.timestamping import timestamp_iso
 from qbittensor.validator.utils.execution_status import ExecutionStatus
@@ -148,7 +149,7 @@ class TelemetryService:
     def vali_record_execution_from_jobs_api(self, execution_id: str, miner_uid: int, miner_hotkey: str):
         try:
             timestamp: str = timestamp_iso()
-            self._enqueue_datapoint(f"vali_execution_from_jobs_api", timestamp, 1.0, miner_uid, miner_hotkey, {"execution_id": execution_id})
+            self._enqueue_datapoint(f"vali_execution_from_jobs_api", timestamp, 0.0 if execution_id == COLLECT_SYNAPSE_ID else 1.0, miner_uid, miner_hotkey, )
         except Exception as e:
             bt.logging.debug(f"Failed to enqueue vali_execution_from_jobs_api for miner {miner_uid}: {e}")  # Non-critical
 
@@ -184,14 +185,14 @@ class TelemetryService:
     def miner_record_execution_received(self, execution_id: str, miner_uid: int, miner_hotkey: str):
         try:
             timestamp: str = timestamp_iso()
-            self._enqueue_datapoint(f"miner_execution_received", timestamp, 1.0, miner_uid, miner_hotkey, {"execution_id": execution_id})
+            self._enqueue_datapoint(f"miner_execution_received", timestamp, 0.0 if execution_id == COLLECT_SYNAPSE_ID else 1, miner_uid, miner_hotkey)
         except Exception as e:
             bt.logging.debug(f"Failed to enqueue execution_received for miner {miner_uid}: {e}")  # Non-critical
 
-    def miner_record_execution_status_change(self, execution_id: str, status: str, miner_uid: int, miner_hotkey: str):
+    def miner_record_execution_status_change(self, execution_id: str, new_status: str, old_status, miner_uid: int, miner_hotkey: str):
         try:
             timestamp: str = timestamp_iso()
-            self._enqueue_datapoint(f"miner_execution_status_change", timestamp, status, miner_uid, miner_hotkey, {"execution_id": execution_id})
+            self._enqueue_datapoint(f"miner_execution_status_change", timestamp, execution_id, miner_uid, miner_hotkey, {"new_status": new_status, "old_status": old_status})
         except Exception as e:
             bt.logging.debug(f"Failed to enqueue execution_status_change for miner {miner_uid}: {e}")  # Non-critical
 

@@ -14,6 +14,7 @@ from qbittensor.utils.request.utils import make_session
 from qbittensor.utils.timestamping import timestamp
 
 
+NETUID = 48
 JWT_ENDPOINT: str = "token"
 
 class KeycloakJWT(BaseModel):
@@ -62,14 +63,15 @@ class JWTManager:
         return JWT(**token.model_dump(by_alias=True), expiration_date=expiration_date)
 
     def _get_signed_header(self) -> Dict[str, str]:
-        """Create request header with signature, timestamp, hotkey"""
+        """Create request header with signature, timestamp, hotkey, and netuid"""
         timestamp = str(int(time()))
         signature_bytes: bytes = self._keypair.sign(self._keypair.ss58_address.encode("utf-8"))
         signature_b64: str = base64.b64encode(signature_bytes).decode("utf-8")
         token_json: dict = {
             "hotkey": self._keypair.ss58_address,
             "timestamp": timestamp,
-            "signature": signature_b64
+            "signature": signature_b64,
+            "subnet": NETUID
         }
         token: str = base64.b64encode(json.dumps(token_json).encode("utf-8")).decode('utf-8')
         return {
