@@ -48,7 +48,7 @@ class WeightSetter:
         weights: List[float] = self._get_weights(onboarded_miner_hotkeys)
         uids: List[int] = list(range(len(weights)))
         non_zero: List[Tuple[int, float]] = []
-        for uid, weight in enumerate(weights):
+        for uid, weight in zip(uids, weights):
             if weight > 0:
                 non_zero.append((uid, weight))
         bt.logging.info(f"{LOG_NS} setting weights. Non-zero miner weights: {non_zero}")
