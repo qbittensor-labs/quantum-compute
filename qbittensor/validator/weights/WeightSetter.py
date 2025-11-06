@@ -1,6 +1,6 @@
 from datetime import timedelta
 import bittensor as bt
-from typing import List
+from typing import List, Tuple
 
 from qbittensor.utils.telemetry.TelemetryService import TelemetryService
 from qbittensor.validator.reward.burn_uid import get_burn_uid
@@ -47,7 +47,11 @@ class WeightSetter:
         onboarded_miner_hotkeys = self._get_onboarded_miner_hotkeys()
         weights: List[float] = self._get_weights(onboarded_miner_hotkeys)
         uids: List[int] = list(range(len(weights)))
-        bt.logging.debug(f"{LOG_NS} calculated weights: {weights}... for onboarded miners: {onboarded_miner_hotkeys}")
+        non_zero: List[Tuple[int, float]] = []
+        for uid, weight in enumerate(weights):
+            if weight > 0:
+                non_zero.append((uid, weight))
+        bt.logging.info(f"{LOG_NS} setting weights. Non-zero miner weights: {non_zero}")
         self.telemetry_service.vali_record_weights(weights)
         self._publisher.publish(uids, weights)
         
