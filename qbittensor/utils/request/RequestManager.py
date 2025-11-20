@@ -93,16 +93,8 @@ class RequestManager:
         status_code = response.status_code
         is_error_code = status_code < 200 or status_code > 299
         if is_error_code:
-            # Extract error message from NestJS server response
-            error_message = "Unknown error"
-            try:
-                error_data = response.json()
-                error_message = error_data.get('message', error_message)
-            except (ValueError, KeyError):
-                error_message = response.text if response.text else error_message
-
             if status_code not in ignore_codes:
-                bt.logging.trace(f"❗ Received error from server for '{method} {url}' code: {status_code} - {error_message}")
+                bt.logging.trace(f"❗ Received error from server for '{method} {url}' code: {status_code} - {response.text}")
         else:
             if status_code not in ignore_codes:
                 bt.logging.trace(f"✅ {method} request to '{url}' successful with status code {status_code}")

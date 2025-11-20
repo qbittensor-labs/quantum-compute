@@ -55,7 +55,7 @@ class SynapseManager:
             return None
 
         if response.status_code == 204:
-            bt.logging.trace(f"📭  No new execution available from job server. Sending a collect-only request")
+            bt.logging.trace(f"📭  No new execution available from job server. Sending a collect-only request. Response body {response.text}")
             return ComputeRequest(execution_id=COLLECT_SYNAPSE_ID, shots=0, configuration_data={}, input_data_url="")  # Return empty object to indicate no job found. Do this so we can collect all finished jobs from miner in the synapse response.
 
         if response.status_code == 200:

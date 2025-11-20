@@ -131,6 +131,7 @@ def test_get_synapse_success(sm, mock_basic_miner):
 def test_get_synapse_no_data(sm, mock_basic_miner):
     class MockResponse:
         status_code = 204
+        text = "UUID from job server logging"
     sm.request_manager.get = lambda *a, **kw: MockResponse()
     circuit, compute_request = sm.get_synapse(mock_basic_miner)
     assert circuit is not None
