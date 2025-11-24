@@ -149,7 +149,7 @@ class TelemetryService:
     def vali_record_execution_from_jobs_api(self, execution_id: str, miner_uid: int, miner_hotkey: str):
         try:
             timestamp: str = timestamp_iso()
-            self._enqueue_datapoint(f"vali_execution_from_jobs_api", timestamp, 0.0 if execution_id == COLLECT_SYNAPSE_ID else 1.0, miner_uid, miner_hotkey, )
+            self._enqueue_datapoint(f"vali_execution_from_jobs_api", timestamp, 0.0 if execution_id == COLLECT_SYNAPSE_ID else 1.0, miner_uid, miner_hotkey, {"execution_id": execution_id})
         except Exception as e:
             bt.logging.debug(f"Failed to enqueue vali_execution_from_jobs_api for miner {miner_uid}: {e}")  # Non-critical
 
