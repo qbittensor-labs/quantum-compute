@@ -1,6 +1,7 @@
 import threading
 from typing import Any, Dict, List
 import bittensor as bt
+from datetime import datetime, timezone
 
 from pkg.database.database_manager import DatabaseManager
 from qbittensor.protocol import COLLECT_SYNAPSE_ID, CircuitSynapse, ExecutionData
@@ -75,6 +76,7 @@ class Scorer:
 
                 self._metrics.upsert_last_circuit(next_miner.hotkey, synapse.last_circuit)
 
+                completed_execution_ids: List[str] = []
                 for execution in synapse.finished_executions:
                     try:
                         self.telemetry_service.vali_record_execution_from_miner(
@@ -84,6 +86,7 @@ class Scorer:
                             miner_hotkey=next_miner.hotkey,
                         )
                         if execution.status == ExecutionStatus.COMPLETED:
+                            completed_execution_ids.append(execution.execution_id)
                             self._record_time_received(next_miner.hotkey, execution.execution_id)  # Update local database
                             self._patch_job_complete(execution)  # Send to job server
                             bt.logging.trace(f"| {current_thread} | ✅  Miner reported successfuly completion for execution_id {execution.execution_id}")
@@ -94,9 +97,19 @@ class Scorer:
 
                     except Exception as e:
                         bt.logging.error(f"| {current_thread} | ❌ Error processing finished execution execution_id={execution.execution_id} err={e}")
-
+                
+                self._store_successful_executions(completed_execution_ids)
+                
             except Exception as e:
                 bt.logging.error(f"| {current_thread} | ❌ Error handling miner response: {e}")
+
+    def _store_successful_executions(self, execution_ids: List[str]) -> None:
+        """Store the execution id in the local db"""
+        now: datetime = datetime.now(timezone.utc)
+        query: str = """INSERT OR IGNORE INTO successful_job (execution_id, created_at) VALUES (?, ?)"""
+        values: List[tuple] = [(execution_id, now) for execution_id in execution_ids]
+        self.database_manager.query_and_commit_many(query, values)
+        
 
     def _patch_job_rejected(self, execution_id: str, message: str) -> None:
         """Send the request back to the job server because retries exceeded"""

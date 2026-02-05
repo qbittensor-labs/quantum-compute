@@ -11,6 +11,17 @@ class ValidatorTableInitializer(TableInitializer):
         self._create_last_circuit_table()
         self._create_active_miners_table()
         self._create_executions_table()
+        
+    def _create_successful_jobs_table(self) -> None:
+        """Create table for counting successful jobs"""
+        self.database_manager.query_and_commit('''
+            CREATE TABLE IF NOT EXISTS successful_job (
+                miner_hotkey TEXT PRIMARY KEY
+                execution_id,
+                created_at DATETIME
+            )                                
+        ''')
+        self.database_manager.query_and_commit("CREATE INDEX IF NOT EXISTS execution_id_idx ON successful_job (execution_id)")
 
     def _create_last_circuit_table(self) -> None:
         """Create table to maintain the last circuit update from each miner"""
