@@ -23,19 +23,19 @@ class WeightSetter:
         self,
         metagraph: bt.Metagraph,
         wallet: bt.Wallet,
-        request_manager: RequestManager,
+        # request_manager: RequestManager,
         database_manager: DatabaseManager,
         network: str,
     ):
         self.metagraph: bt.Metagraph = metagraph
         self.wallet: bt.Wallet = wallet
-        self.request_manager: RequestManager = request_manager
+        # self.request_manager: RequestManager = request_manager
         self.network = network
 
         self.database_manager: DatabaseManager = database_manager
         self._publisher: WeightPublisher = WeightPublisher(metagraph, wallet, network)
         self.timer: Timer = Timer(timedelta(minutes=30), self._set_weights, run_on_start=True)
-        self.telemetry_service = TelemetryService(request_manager)
+        # self.telemetry_service = TelemetryService(request_manager)
 
     
     def check_timer(self) -> None:
@@ -45,7 +45,8 @@ class WeightSetter:
 
     def _set_weights(self) -> None:
         bt.logging.info(f"{LOG_NS} start")
-        onboarded_miner_hotkeys = self._get_onboarded_miner_hotkeys()
+        # onboarded_miner_hotkeys = self._get_onboarded_miner_hotkeys()
+        onboarded_miner_hotkeys = ["TSTHK1", "TSTHK2", "TSTHK3", "TSTHK4"]
         weights: List[float] = self._get_weights(onboarded_miner_hotkeys)
         uids: List[int] = list(range(len(weights)))
         non_zero: List[Tuple[int, float]] = []
@@ -53,7 +54,7 @@ class WeightSetter:
             if weight > 0:
                 non_zero.append((uid, weight))
         bt.logging.info(f"{LOG_NS} setting weights. Non-zero miner weights: {non_zero}")
-        self.telemetry_service.vali_record_weights(weights)
+        # self.telemetry_service.vali_record_weights(weights)
         self._publisher.publish(uids, weights)
         
     def _get_execution_counts_per_hotkey(self) -> List[tuple]:
@@ -88,14 +89,21 @@ class WeightSetter:
         """Calculate weights for the given hotkeys."""
         weights = [0.0] * len(self.metagraph.hotkeys)
         
-        counts_per_hotkey: List[tuple] = self._get_execution_counts_per_hotkey()
-        proportions: Dict[str, float] = self._get_hotkey_proportions(counts_per_hotkey)
+        bt.logging.info(f"DEBUG Onboarded miner keys: {onboarded_miner_hotkeys}")
         
-        keys_needing_maintenance: List[str] = [hotkey for hotkey in onboarded_miner_hotkeys if hotkey not in proportions]
+        counts_per_hotkey: List[tuple] = self._get_execution_counts_per_hotkey()
+        bt.logging.info(f"DEBUG Counts Per Hotkey Result: {counts_per_hotkey}")
+        proportions: Dict[str, float] = self._get_hotkey_proportions(counts_per_hotkey)
+        bt.logging.info(f"DEBUG Proportions dict: {proportions}")
+        
+        keys_needing_maintenance: List[str] = [hotkey for hotkey in onboarded_miner_hotkeys if hotkey not in proportions.keys()]
+        bt.logging.info(f"DEBUG Keys needing maintenance: {keys_needing_maintenance}")
         maintenance_amount: float = 0.0
         if len(keys_needing_maintenance) > 0:
             maintenance_amount = TOTAL_MAINTENANCE_INCENTIVE / len(keys_needing_maintenance)
         non_maintenance_multiplier: float = 1 - TOTAL_MAINTENANCE_INCENTIVE
+        
+        bt.logging.info(f"DEBUG Maintenance Amount: {maintenance_amount} | Non-Maintenance multiplier: {non_maintenance_multiplier}")
         
         for uid, hotkey in enumerate(self.metagraph.hotkeys):
             if hotkey in proportions:
@@ -103,10 +111,6 @@ class WeightSetter:
                 weights[uid] = final_proportion
             elif hotkey in onboarded_miner_hotkeys:
                 weights[uid] = maintenance_amount
-
-        # burn_uid = self._get_burn_uid()
-        # weights[burn_uid] = BURN_PERCENTAGE # Set the burn amount
-        # weights[DISTRIBUTION_KEY_UID] = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * len(onboarded_miner_hotkeys)) # Set the distribution key weight
 
         return weights
 
@@ -118,14 +122,14 @@ class WeightSetter:
         except Exception:
             return 34 # owner uid
         
-    def _get_onboarded_miner_hotkeys(self) -> List[str]:
-        """Fetch list of onboarded miners from the job server."""
-        try:
-            endpoint = "backends/hotkeys"
-            response = self.request_manager.get(endpoint=endpoint)
-            data = response.json()
-            bt.logging.debug(f"{LOG_NS} Fetched onboarded miners: {data}")
-            return data
-        except Exception as e:
-            bt.logging.error(f"{LOG_NS} Failed to fetch onboarded miners: {e}")
-            return []
+    # def _get_onboarded_miner_hotkeys(self) -> List[str]:
+    #     """Fetch list of onboarded miners from the job server."""
+    #     try:
+    #         endpoint = "backends/hotkeys"
+    #         response = self.request_manager.get(endpoint=endpoint)
+    #         data = response.json()
+    #         bt.logging.debug(f"{LOG_NS} Fetched onboarded miners: {data}")
+    #         return data
+    #     except Exception as e:
+    #         bt.logging.error(f"{LOG_NS} Failed to fetch onboarded miners: {e}")
+    #         return []

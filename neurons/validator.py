@@ -28,12 +28,12 @@ class Validator(BaseValidatorNeuron):
         table_initializer.create_tables()
 
         # Request manager
-        request_manager = RequestManager(self.wallet.hotkey, node_type="validator", network=self.subtensor.network)
+        # request_manager = RequestManager(self.wallet.hotkey, node_type="validator", network=self.subtensor.network)
 
         # Helpers
-        self.synapse_manager = SynapseManager(database_manager, request_manager)
-        self.scorer = Scorer(database_manager, self.metagraph, request_manager)
-        self.next_miner = NextMiner(self.metagraph)
+        # self.synapse_manager = SynapseManager(database_manager, request_manager)
+        # self.scorer = Scorer(database_manager, self.metagraph, request_manager)
+        # self.next_miner = NextMiner(self.metagraph)
 
         # Miner management
         self.miner_manager = MinerManager(database_manager, self.metagraph)
@@ -42,47 +42,48 @@ class Validator(BaseValidatorNeuron):
         self.weight_setter = WeightSetter(
             self.metagraph,
             self.wallet,
-            request_manager,
+            # request_manager,
             database_manager,
             self.subtensor.network
         )
         
         # Heartbeat
-        self.heartbeat = Heartbeat(request_manager)
+        # self.heartbeat = Heartbeat(request_manager)
 
     def forward(self):
-        """Forward function for the validator"""
-        current_thread = threading.current_thread().name
-        bt.logging.info(f"| {current_thread} | ⏩ Running forward pass")
+        pass
+    #     """Forward function for the validator"""
+    #     current_thread = threading.current_thread().name
+    #     bt.logging.info(f"| {current_thread} | ⏩ Running forward pass")
 
-        synapse, original_compute_request, next_miner = None, None, None
+    #     synapse, original_compute_request, next_miner = None, None, None
 
-        while synapse is None or next_miner is None or original_compute_request is None:
-            try:
-                next_miner: BasicMiner | None = self.next_miner.get_next_miner()
-            except IndexError:
-                bt.logging.trace(f"| {current_thread} | ❌  Forward pass failed to find the next miner, returning")
-                return
+    #     while synapse is None or next_miner is None or original_compute_request is None:
+    #         try:
+    #             next_miner: BasicMiner | None = self.next_miner.get_next_miner()
+    #         except IndexError:
+    #             bt.logging.trace(f"| {current_thread} | ❌  Forward pass failed to find the next miner, returning")
+    #             return
 
-            # Get synapse and original compute request
-            synapse, original_compute_request = self.synapse_manager.get_synapse(next_miner)
-            if synapse is None:
-                sleep(1)
+    #         # Get synapse and original compute request
+    #         synapse, original_compute_request = self.synapse_manager.get_synapse(next_miner)
+    #         if synapse is None:
+    #             sleep(1)
                 
-        bt.logging.info(f"| {current_thread} | 🔗  Next onboarded miner '{next_miner}'")
+    #     bt.logging.info(f"| {current_thread} | 🔗  Next onboarded miner '{next_miner}'")
 
-        # Query the metagraph
-        response: List[Any] = self.dendrite.query(
-            axons=[next_miner.axon],
-            synapse=synapse,
-            deserialize=True,
-            timeout=10
-        )
-        if response is None:
-            bt.logging.info(f"| {current_thread} | ❗ No responses from miner '{next_miner}'.")
-            return
+    #     # Query the metagraph
+    #     response: List[Any] = self.dendrite.query(
+    #         axons=[next_miner.axon],
+    #         synapse=synapse,
+    #         deserialize=True,
+    #         timeout=10
+    #     )
+    #     if response is None:
+    #         bt.logging.info(f"| {current_thread} | ❗ No responses from miner '{next_miner}'.")
+    #         return
 
-        self.scorer.process_miner_responses(response, next_miner, original_compute_request)
+    #     self.scorer.process_miner_responses(response, next_miner, original_compute_request)
 
     def run(self):
 
@@ -94,12 +95,12 @@ class Validator(BaseValidatorNeuron):
             while True:
                 
                 # Check timers
-                self.heartbeat.timer.check_timer()
-                self.miner_manager.timer.check_timer()
+                # self.heartbeat.timer.check_timer()
+                # self.miner_manager.timer.check_timer()
                 self.weight_setter.check_timer()
 
                 # Call to forward()
-                self.forward()
+                # self.forward()
                 
                 # Sleep and maintain step
                 time.sleep(5)
