@@ -98,16 +98,18 @@ class Scorer:
                     except Exception as e:
                         bt.logging.error(f"| {current_thread} | ❌ Error processing finished execution execution_id={execution.execution_id} err={e}")
                 
-                self._store_successful_executions(completed_execution_ids)
+                if len(completed_execution_ids) > 0:
+                    self._store_successful_executions(completed_execution_ids, next_miner.hotkey)
                 
             except Exception as e:
                 bt.logging.error(f"| {current_thread} | ❌ Error handling miner response: {e}")
 
-    def _store_successful_executions(self, execution_ids: List[str]) -> None:
+    def _store_successful_executions(self, execution_ids: List[str], miner_hotkey: str) -> None:
         """Store the execution id in the local db"""
+        bt.logging.info(f"DEBUG Storing successful executions in local database. Execution IDs: {execution_ids}")
         now: datetime = datetime.now(timezone.utc)
-        query: str = """INSERT OR IGNORE INTO successful_job (execution_id, created_at) VALUES (?, ?)"""
-        values: List[tuple] = [(execution_id, now) for execution_id in execution_ids]
+        query: str = """INSERT OR IGNORE INTO successful_job (miner_hotkey, execution_id, created_at) VALUES (?, ?, ?)"""
+        values: List[tuple] = [(miner_hotkey, execution_id, now) for execution_id in execution_ids]
         self.database_manager.query_and_commit_many(query, values)
         
 

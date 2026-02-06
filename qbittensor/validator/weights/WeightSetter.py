@@ -97,7 +97,7 @@ class WeightSetter:
         proportions: Dict[str, float] = self._get_hotkey_proportions(counts_per_hotkey)
         bt.logging.info(f"DEBUG Proportions dict: {proportions}")
         
-        keys_needing_maintenance: List[str] = [hotkey for hotkey in onboarded_miner_hotkeys if hotkey not in proportions.keys()]
+        keys_needing_maintenance: List[str] = [hotkey for hotkey in onboarded_miner_hotkeys if hotkey is not None and hotkey not in proportions.keys()]
         bt.logging.info(f"DEBUG Keys needing maintenance: {keys_needing_maintenance}")
         maintenance_amount: float = 0.0
         if len(keys_needing_maintenance) > 0:
