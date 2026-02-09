@@ -58,9 +58,15 @@ class WeightSetter:
         self.telemetry_service.vali_record_weights(weights)
         self._publisher.publish(uids, weights)
         
-    def _get_execution_counts_per_hotkey(self) -> List[tuple]:
+    def _get_execution_costs_per_hotkey(self) -> List[tuple]:
         min_time: datetime = datetime.now(timezone.utc) - LOOKBACK_PERIOD
-        query: str = """SELECT miner_hotkey, COUNT(*) FROM successful_job WHERE created_at > ? GROUP BY miner_hotkey"""
+        query: str = """
+            SELECT miner_hotkey, SUM(cost) as total_cost
+            FROM successful_job 
+            WHERE created_at > ? 
+            AND cost IS NOT NULL 
+            GROUP BY miner_hotkey
+        """
         values: tuple = (min_time,)
         results: list = self.database_manager.query_with_values(query, values)
         if not results:
@@ -71,18 +77,18 @@ class WeightSetter:
             return []
         return results
     
-    def _get_hotkey_proportions(self, hotkey_count_list: List[tuple]) -> Dict[str, float]:
+    def _get_hotkey_proportions(self, hotkey_cost_list: List[tuple]) -> Dict[str, float]:
         sum: int = 0
-        for entry in hotkey_count_list:
+        for entry in hotkey_cost_list:
             sum += entry[1]
         if sum == 0:
             bt.logging.info("Found 0 sum of all hotkey counts.")
             return {}
         hotkey_proportion_dict: Dict[str, float] = {}
-        for entry in hotkey_count_list:
+        for entry in hotkey_cost_list:
             hotkey: str = entry[0]
-            count: int = entry[1]
-            proportion: float = count / sum
+            miner_total_cost: int = entry[1]
+            proportion: float = miner_total_cost / sum
             hotkey_proportion_dict[hotkey] = proportion
         return hotkey_proportion_dict
 
@@ -92,9 +98,9 @@ class WeightSetter:
         
         bt.logging.info(f"DEBUG Onboarded miner keys: {onboarded_miner_hotkeys}")
         
-        counts_per_hotkey: List[tuple] = self._get_execution_counts_per_hotkey()
-        bt.logging.info(f"DEBUG Counts Per Hotkey Result: {counts_per_hotkey}")
-        proportions: Dict[str, float] = self._get_hotkey_proportions(counts_per_hotkey)
+        costs_per_hotkey: List[tuple] = self._get_execution_costs_per_hotkey()
+        bt.logging.info(f"DEBUG Costs Per Hotkey Result: {costs_per_hotkey}")
+        proportions: Dict[str, float] = self._get_hotkey_proportions(costs_per_hotkey)
         bt.logging.info(f"DEBUG Proportions dict: {proportions}")
         
         # Create sets

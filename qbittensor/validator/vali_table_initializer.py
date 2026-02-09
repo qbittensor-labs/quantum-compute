@@ -20,6 +20,7 @@ class ValidatorTableInitializer(TableInitializer):
                 miner_hotkey TEXT NOT NULL,
                 execution_id TEXT NOT NULL,
                 created_at DATETIME NOT NULL,
+                cost INTEGER,
                 PRIMARY KEY (miner_hotkey, execution_id)
             )                                
         ''')
