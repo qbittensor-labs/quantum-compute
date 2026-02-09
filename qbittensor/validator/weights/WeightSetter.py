@@ -124,6 +124,13 @@ class WeightSetter:
                 tmp_weights[uid] = maintenance_amount
                 
         bt.logging.info(f"DEBUG Proposed weights: {tmp_weights}")
+        new_weights_non_zero: List[Tuple[int, str, float]] = []
+        for uid, weight in enumerate(tmp_weights):
+            if weight > 0:
+                new_weights_non_zero.append((uid, self.metagraph.hotkeys[uid], weight))
+        bt.logging.info(f"DEBUG Proposed non-zero weights")
+        for entry in new_weights_non_zero:
+            bt.logging.info(f"    UID: {entry[0]} | Hotkey: {entry[1]} | Weight: {entry[2]}")
             
         for uid, hotkey in enumerate(self.metagraph.hotkeys):
             if hotkey in onboarded_miner_hotkeys:
