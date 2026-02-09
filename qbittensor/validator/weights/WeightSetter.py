@@ -97,7 +97,16 @@ class WeightSetter:
         proportions: Dict[str, float] = self._get_hotkey_proportions(counts_per_hotkey)
         bt.logging.info(f"DEBUG Proportions dict: {proportions}")
         
-        keys_needing_maintenance: List[str] = [hotkey for hotkey in onboarded_miner_hotkeys if hotkey is not None and hotkey not in proportions.keys()]
+        # Create sets
+        all_onboarded_keys_set: set = set(onboarded_miner_hotkeys)   # All onboarded miner keys
+        all_keys_in_proportions_set: set = set(proportions.keys())   # All keys with proportions
+        all_metagraph_hotkeys_set: set = set(self.metagraph.hotkeys) # All keys in metagrah
+        
+        # Set operations
+        onboarded_keys_in_metagraph_set: set = all_onboarded_keys_set.intersection(all_metagraph_hotkeys_set) # Onboarded miner keys that are in the metagraph
+        keys_needing_maintenance_set: set = onboarded_keys_in_metagraph_set.difference(all_keys_in_proportions_set) # Onboarded miner keys that are in the metagraph but not in the proportions dict
+        
+        keys_needing_maintenance: List[str] = list(keys_needing_maintenance_set)
         bt.logging.info(f"DEBUG Keys needing maintenance: {keys_needing_maintenance}")
         maintenance_amount: float = 0.0
         if len(keys_needing_maintenance) > 0:
