@@ -21,7 +21,7 @@ class CostConfirmation:
         bt.logging.info(f"💰 Found {len(rows)} rows that need cost confirmation.")
         for miner_hotkey, execution_id in rows:
             cost: requests.Response = self._get_cost(miner_hotkey, execution_id)
-            bt.logging.trace(f"DEBUG | Cost response for miner '{miner_hotkey}' and execution '{execution_id}': Status Code '{cost.status_code}', Cost '{cost.text}'")
+            # bt.logging.trace(f"DEBUG | Cost response for miner '{miner_hotkey}' and execution '{execution_id}': Status Code '{cost.status_code}', Cost '{cost.text}'")
             self._handle_cost_response(cost, miner_hotkey, execution_id)
         self._clean_out_table()
         
@@ -34,10 +34,10 @@ class CostConfirmation:
             bt.logging.trace(f"\tDEBUG | Parsed cost for miner '{miner_hotkey}' and execution '{execution_id}': {cost}")
             self._update_cost_in_db(miner_hotkey, execution_id, cost)
         elif response.status_code == 202:
-            pass
-        # FIXME Uncomment once this gets into prod
-        # elif response.status_code == 404:
-        #     self._drop_row(miner_hotkey, execution_id)
+            bt.logging.info(f"Cost for miner '{miner_hotkey}' and execution '{execution_id}' is not ready yet. Will check again in the next cycle.")
+        elif response.status_code == 404:
+            bt.logging.info(f"Execution '{execution_id}' for miner '{miner_hotkey}' not found. Dropping row from database.")
+            # self._drop_row(miner_hotkey, execution_id) # FIXME Uncomment once we're ready to remove rows for failed executions
         else:
             bt.logging.error(f"Failed to get cost for miner {miner_hotkey} and execution {execution_id}. Unexpected status code: {response.status_code}")
         
@@ -64,7 +64,7 @@ class CostConfirmation:
         """Get the cost of a successful job"""
         endpoint: str = f"execution/{execution_id}/cost"
         params: dict = {"miner_hotkey": miner_hotkey}
-        return self.request_manager.get(endpoint, params=params)
+        return self.request_manager.get(endpoint, params=params, ignore_codes=[404])
         
     def _get_rows(self) -> List[Tuple[str, str]]:
         """Get rows that need cost confirmation."""
