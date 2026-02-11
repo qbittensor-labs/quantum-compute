@@ -21,7 +21,6 @@ class CostConfirmation:
         bt.logging.info(f"💰 Found {len(rows)} rows that need cost confirmation.")
         for miner_hotkey, execution_id in rows:
             cost: requests.Response = self._get_cost(miner_hotkey, execution_id)
-            # bt.logging.trace(f"DEBUG | Cost response for miner '{miner_hotkey}' and execution '{execution_id}': Status Code '{cost.status_code}', Cost '{cost.text}'")
             self._handle_cost_response(cost, miner_hotkey, execution_id)
         self._clean_out_table()
         
@@ -29,15 +28,12 @@ class CostConfirmation:
         """Handle the response from the cost endpoint. If successful, update the database with the cost."""
         if response.status_code == 200:
             cost_data: dict = response.json()
-            bt.logging.trace(f"\tDEBUG | Cost data for miner '{miner_hotkey}' and execution '{execution_id}': {cost_data}")
             cost: int = cost_data.get("cost", 0)
-            bt.logging.trace(f"\tDEBUG | Parsed cost for miner '{miner_hotkey}' and execution '{execution_id}': {cost}")
             self._update_cost_in_db(miner_hotkey, execution_id, cost)
         elif response.status_code == 202:
-            bt.logging.info(f"Cost for miner '{miner_hotkey}' and execution '{execution_id}' is not ready yet. Will check again in the next cycle.")
+            return
         elif response.status_code == 404:
-            bt.logging.info(f"Execution '{execution_id}' for miner '{miner_hotkey}' not found. Dropping row from database.")
-            # self._drop_row(miner_hotkey, execution_id) # FIXME Uncomment once we're ready to remove rows for failed executions
+            self._drop_row(miner_hotkey, execution_id)
         else:
             bt.logging.error(f"Failed to get cost for miner {miner_hotkey} and execution {execution_id}. Unexpected status code: {response.status_code}")
         
@@ -62,7 +58,7 @@ class CostConfirmation:
         
     def _get_cost(self, miner_hotkey: str, execution_id: str) -> requests.Response:
         """Get the cost of a successful job"""
-        endpoint: str = f"execution/{execution_id}/cost"
+        endpoint: str = f"executions/{execution_id}/cost"
         params: dict = {"miner_hotkey": miner_hotkey}
         return self.request_manager.get(endpoint, params=params, ignore_codes=[404])
         
@@ -84,7 +80,7 @@ class CostConfirmation:
         count_query: str = """SELECT COUNT(*) FROM successful_job WHERE created_at < ?"""
         count_result: List[Tuple[int]] = self.database_manager.query_with_values(count_query, (min_time,))
         count: int = count_result[0][0] if count_result else 0
-        bt.logging.info(f"💰 Cleaning out successful_job table. Found {count} rows older than {min_time}.")
-        # query: str = """DELETE FROM successful_job WHERE created_at < ?"""
-        # values: tuple = (min_time,)
-        # self.database_manager.query_and_commit_with_values(query, values)
+        bt.logging.info(f"🗑️ Cleaning out successful_job table. Found {count} rows older than {min_time}.")
+        query: str = """DELETE FROM successful_job WHERE created_at < ?"""
+        values: tuple = (min_time,)
+        self.database_manager.query_and_commit_with_values(query, values)

@@ -96,12 +96,8 @@ class WeightSetter:
         """Calculate weights for the given hotkeys."""
         weights = [0.0] * len(self.metagraph.hotkeys)
         
-        bt.logging.info(f"DEBUG Onboarded miner keys: {onboarded_miner_hotkeys}")
-        
         costs_per_hotkey: List[tuple] = self._get_execution_costs_per_hotkey()
-        bt.logging.info(f"DEBUG Costs Per Hotkey Result: {costs_per_hotkey}")
         proportions: Dict[str, float] = self._get_hotkey_proportions(costs_per_hotkey)
-        bt.logging.info(f"DEBUG Proportions dict: {proportions}")
         
         # Create sets
         all_onboarded_keys_set: set = set(onboarded_miner_hotkeys)   # All onboarded miner keys
@@ -113,13 +109,11 @@ class WeightSetter:
         keys_needing_maintenance_set: set = onboarded_keys_in_metagraph_set.difference(all_keys_in_proportions_set) # Onboarded miner keys that are in the metagraph but not in the proportions dict
         
         keys_needing_maintenance: List[str] = list(keys_needing_maintenance_set)
-        bt.logging.info(f"DEBUG Keys needing maintenance: {keys_needing_maintenance}")
         maintenance_amount: float = 0.0
         if len(keys_needing_maintenance) > 0:
             maintenance_amount = TOTAL_MAINTENANCE_INCENTIVE / len(keys_needing_maintenance)
         non_maintenance_multiplier: float = 1 - TOTAL_MAINTENANCE_INCENTIVE
         
-        bt.logging.info(f"DEBUG Maintenance Amount: {maintenance_amount} | Non-Maintenance multiplier: {non_maintenance_multiplier}")
         tmp_weights: List[float] = [0.0] * len(self.metagraph.hotkeys)
         
         for uid, hotkey in enumerate(self.metagraph.hotkeys):
@@ -129,7 +123,6 @@ class WeightSetter:
             elif hotkey in onboarded_miner_hotkeys:
                 tmp_weights[uid] = maintenance_amount
                 
-        bt.logging.info(f"DEBUG Proposed weights: {tmp_weights}")
         new_weights_non_zero: List[Tuple[int, str, float]] = []
         for uid, weight in enumerate(tmp_weights):
             if weight > 0:
@@ -162,7 +155,6 @@ class WeightSetter:
             endpoint = "backends/hotkeys"
             response = self.request_manager.get(endpoint=endpoint)
             data = response.json()
-            bt.logging.debug(f"{LOG_NS} Fetched onboarded miners: {data}")
             return data
         except Exception as e:
             bt.logging.error(f"{LOG_NS} Failed to fetch onboarded miners: {e}")
