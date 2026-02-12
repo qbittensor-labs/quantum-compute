@@ -150,7 +150,11 @@ def test_synapse_with_failed_execution(scorer: Scorer, synapse_with_failed_execu
         patch.object(scorer, "_patch_job_complete") as mock_patch_job_complete:
         scorer.process_miner_responses([synapse_with_failed_execution], BasicMiner(hotkey="miner_hotkey_1", uid=2, axon=mock_axon), compute_request)
         
-        mock_patch_job_rejected.assert_called_once_with(synapse_with_failed_execution.finished_executions[2].execution_id, "Some error occurred")
+        mock_patch_job_rejected.assert_called_once_with(
+            synapse_with_failed_execution.finished_executions[2].execution_id,
+            "Some error occurred",
+            synapse_with_failed_execution.finished_executions[2].execution_data
+        )
         assert mock_patch_job_complete.call_count == 2
         mock_patch_job_complete.assert_any_call(synapse_with_failed_execution.finished_executions[0])
         mock_patch_job_complete.assert_any_call(synapse_with_failed_execution.finished_executions[1])
