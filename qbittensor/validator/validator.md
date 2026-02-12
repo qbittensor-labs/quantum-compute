@@ -67,7 +67,6 @@ btcli subnet register --wallet.name <wallet_name> --wallet.hotkey <hotkey_name> 
 ```bash
 git clone https://github.com/qbittensor-labs/quantum-compute.git
 cd quantum-compute
-pip install -e .
 ```
 
 ### 6. Install Requirements
@@ -75,6 +74,7 @@ pip install -e .
 Install all required dependencies:
 ```bash
 pip install -r requirements.txt
+pip install -e .
 ```
 
 ### 7. Install PM2 (if not already installed)
