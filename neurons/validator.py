@@ -14,6 +14,7 @@ from qbittensor.base.validator import BaseValidatorNeuron
 from qbittensor.validator.reward.score import Scorer
 from qbittensor.validator.synapse.SynapseManager import SynapseManager
 from qbittensor.validator.weights.WeightSetter import WeightSetter
+from qbittensor.validator.reward.cost import CostConfirmation
 
 
 class Validator(BaseValidatorNeuron):
@@ -49,6 +50,9 @@ class Validator(BaseValidatorNeuron):
         
         # Heartbeat
         self.heartbeat = Heartbeat(request_manager)
+        
+        # Cost management
+        self.cost = CostConfirmation(database_manager, request_manager)
 
     def forward(self):
         """Forward function for the validator"""
@@ -97,6 +101,7 @@ class Validator(BaseValidatorNeuron):
                 self.heartbeat.timer.check_timer()
                 self.miner_manager.timer.check_timer()
                 self.weight_setter.check_timer()
+                self.cost.timer.check_timer()
 
                 # Call to forward()
                 self.forward()

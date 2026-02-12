@@ -68,6 +68,7 @@ def weight_setter(
         database_manager=Mock(),
         network="unit_test"
     )
+    ws.database_manager.query_with_values.return_value = []
     ws._publisher = Mock()
     return ws
 
@@ -104,6 +105,7 @@ def weight_setter_large(
         database_manager=Mock(),
         network="unit_test"
     )
+    ws.database_manager.query_with_values.return_value = []
     ws._publisher = Mock()
     return ws
 
