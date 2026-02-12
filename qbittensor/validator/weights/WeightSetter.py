@@ -2,8 +2,8 @@ from datetime import timedelta, datetime, timezone
 import bittensor as bt
 from typing import Dict, List, Tuple
 
-from qbittensor.utils.telemetry.TelemetryService import TelemetryService
 from qbittensor.validator.reward.burn_uid import get_burn_uid
+from qbittensor.utils.telemetry.TelemetryService import TelemetryService
 from pkg.database.database_manager import DatabaseManager
 from qbittensor.utils.Timer import Timer
 from qbittensor.utils.request.RequestManager import RequestManager
@@ -92,9 +92,9 @@ class WeightSetter:
             hotkey_proportion_dict[hotkey] = proportion
         return hotkey_proportion_dict
 
-    def _get_weights(self, onboarded_miner_hotkeys: List[str]) -> List[float]:
+    def _updated_get_weights(self, onboarded_miner_hotkeys: List[str]) -> List[float]:
         """Calculate weights for the given hotkeys."""
-        weights = [0.0] * len(self.metagraph.hotkeys)
+        weights: List[float] = [0.0] * len(self.metagraph.hotkeys)
         
         costs_per_hotkey: List[tuple] = self._get_execution_costs_per_hotkey()
         proportions: Dict[str, float] = self._get_hotkey_proportions(costs_per_hotkey)
@@ -110,27 +110,24 @@ class WeightSetter:
         
         keys_needing_maintenance: List[str] = list(keys_needing_maintenance_set)
         maintenance_amount: float = 0.0
+        non_maintenance_multiplier: float = 1.0
         if len(keys_needing_maintenance) > 0:
             maintenance_amount = TOTAL_MAINTENANCE_INCENTIVE / len(keys_needing_maintenance)
-        non_maintenance_multiplier: float = 1 - TOTAL_MAINTENANCE_INCENTIVE
-        
-        tmp_weights: List[float] = [0.0] * len(self.metagraph.hotkeys)
+            non_maintenance_multiplier = 1 - TOTAL_MAINTENANCE_INCENTIVE
         
         for uid, hotkey in enumerate(self.metagraph.hotkeys):
             if hotkey in proportions:
                 final_proportion: float = proportions[hotkey] * non_maintenance_multiplier
-                tmp_weights[uid] = final_proportion
-            elif hotkey in onboarded_miner_hotkeys:
-                tmp_weights[uid] = maintenance_amount
-                
-        new_weights_non_zero: List[Tuple[int, str, float]] = []
-        for uid, weight in enumerate(tmp_weights):
-            if weight > 0:
-                new_weights_non_zero.append((uid, self.metagraph.hotkeys[uid], weight))
-        bt.logging.info(f"DEBUG Proposed non-zero weights")
-        for entry in new_weights_non_zero:
-            bt.logging.info(f"    UID: {entry[0]} | Hotkey: {entry[1]} | Weight: {entry[2]}")
-            
+                weights[uid] = final_proportion
+            elif hotkey in keys_needing_maintenance:
+                weights[uid] = maintenance_amount
+
+        return weights
+    
+    def _get_weights(self, onboarded_miner_hotkeys: List[str]) -> List[float]:
+        """Calculate weights for the given hotkeys."""
+        weights = [0.0] * len(self.metagraph.hotkeys)
+        
         for uid, hotkey in enumerate(self.metagraph.hotkeys):
             if hotkey in onboarded_miner_hotkeys:
                 weights[uid] = REG_MAINTAINENCE_INCENTIVE
@@ -140,7 +137,7 @@ class WeightSetter:
         weights[DISTRIBUTION_KEY_UID] = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * len(onboarded_miner_hotkeys)) # Set the distribution key weight
 
         return weights
-
+    
     def _get_burn_uid(self) -> int:
         """Use optional util if present; otherwise constant fallback for tests."""
         try:

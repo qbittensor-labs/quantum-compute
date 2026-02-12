@@ -106,7 +106,6 @@ class Scorer:
 
     def _store_successful_executions(self, execution_ids: List[str], miner_hotkey: str) -> None:
         """Store the execution id in the local db"""
-        bt.logging.info(f"DEBUG Storing successful executions in local database. Execution IDs: {execution_ids}")
         now: datetime = datetime.now(timezone.utc)
         query: str = """INSERT OR IGNORE INTO successful_job (miner_hotkey, execution_id, created_at) VALUES (?, ?, ?)"""
         values: List[tuple] = [(miner_hotkey, execution_id, now) for execution_id in execution_ids]
