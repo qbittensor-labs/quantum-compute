@@ -47,7 +47,6 @@ class WeightSetter:
     def _set_weights(self) -> None:
         bt.logging.info(f"{LOG_NS} start")
         onboarded_miner_hotkeys = self._get_onboarded_miner_hotkeys()
-        # onboarded_miner_hotkeys = ["TSTHK1", "TSTHK2", "TSTHK3", "TSTHK4"]
         weights: List[float] = self._get_weights(onboarded_miner_hotkeys)
         uids: List[int] = list(range(len(weights)))
         non_zero: List[Tuple[int, float]] = []

@@ -130,8 +130,7 @@ class Scorer:
         body: Dict[str, Any] = {
             "status": ExecutionStatus.COMPLETED,
             "upload_id": execution.upload_data_id,
-            "execution_data": execution.execution_data,
-            "message": ""
+            "execution_data": execution.execution_data
         }
         self._patch(execution.execution_id, body)
         
