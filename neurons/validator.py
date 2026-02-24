@@ -100,8 +100,8 @@ class Validator(BaseValidatorNeuron):
                 # Check timers
                 self.heartbeat.timer.check_timer()
                 self.miner_manager.timer.check_timer()
-                self.weight_setter.check_timer()
                 self.cost.timer.check_timer()
+                self.weight_setter.timer.check_timer()
 
                 # Call to forward()
                 self.forward()

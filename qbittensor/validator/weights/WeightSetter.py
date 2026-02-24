@@ -37,24 +37,24 @@ class WeightSetter:
         self._publisher: WeightPublisher = WeightPublisher(metagraph, wallet, network)
         self.timer: Timer = Timer(timedelta(minutes=30), self._set_weights, run_on_start=True)
         self.telemetry_service = TelemetryService(request_manager)
-
-    
-    def check_timer(self) -> None:
-        """Check if it's time to run the weight setting process."""
-        bt.logging.debug(f"{LOG_NS} checking timer on network={self.network}.")
-        self.timer.check_timer()
-
-    def _set_weights(self) -> None:
-        bt.logging.info(f"{LOG_NS} start")
-        onboarded_miner_hotkeys = self._get_onboarded_miner_hotkeys()
-        weights: List[float] = self._get_weights(onboarded_miner_hotkeys)
+        
+    def _print_nonzero_weights(self, weights: List[float]) -> None:
         uids: List[int] = list(range(len(weights)))
         non_zero: List[Tuple[int, float]] = []
         for uid, weight in zip(uids, weights):
             if weight > 0:
                 non_zero.append((uid, weight))
-        bt.logging.info(f"{LOG_NS} setting weights. Non-zero miner weights: {non_zero}")
+        bt.logging.info(f"Non-zero miner weights: {non_zero}")
+
+    def _set_weights(self) -> None:
+        bt.logging.info(f"{LOG_NS} start")
+        onboarded_miner_hotkeys = self._get_onboarded_miner_hotkeys()
+        weights: List[float] = self._get_weights(onboarded_miner_hotkeys)
+        
+        self._print_nonzero_weights(weights)
+        
         self.telemetry_service.vali_record_weights(weights)
+        uids: List[int] = list(range(len(weights)))
         self._publisher.publish(uids, weights)
         
     def _get_execution_costs_per_hotkey(self) -> List[tuple]:
@@ -91,7 +91,7 @@ class WeightSetter:
             hotkey_proportion_dict[hotkey] = proportion
         return hotkey_proportion_dict
 
-    def _updated_get_weights(self, onboarded_miner_hotkeys: List[str]) -> List[float]:
+    def _get_weights(self, onboarded_miner_hotkeys: List[str]) -> List[float]:
         """Calculate weights for the given hotkeys."""
         weights: List[float] = [0.0] * len(self.metagraph.hotkeys)
         
@@ -120,21 +120,7 @@ class WeightSetter:
                 weights[uid] = final_proportion
             elif hotkey in keys_needing_maintenance:
                 weights[uid] = maintenance_amount
-
-        return weights
-    
-    def _get_weights(self, onboarded_miner_hotkeys: List[str]) -> List[float]:
-        """Calculate weights for the given hotkeys."""
-        weights = [0.0] * len(self.metagraph.hotkeys)
-        
-        for uid, hotkey in enumerate(self.metagraph.hotkeys):
-            if hotkey in onboarded_miner_hotkeys:
-                weights[uid] = REG_MAINTAINENCE_INCENTIVE
-
-        burn_uid = self._get_burn_uid()
-        weights[burn_uid] = BURN_PERCENTAGE # Set the burn amount
-        weights[DISTRIBUTION_KEY_UID] = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * len(onboarded_miner_hotkeys)) # Set the distribution key weight
-
+                
         return weights
     
     def _get_burn_uid(self) -> int:

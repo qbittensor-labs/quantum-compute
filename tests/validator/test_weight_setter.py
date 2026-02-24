@@ -115,333 +115,290 @@ class TestWeightSetterMath:
 
     def test_get_weights_no_onboarded_miners(self, weight_setter):
         """Test weight calculation when no miners are onboarded"""
-        burn_uid = 4  # Use a burn_uid within the mock metagraph range (0-4)
-        with patch.object(weight_setter, '_get_burn_uid', return_value=burn_uid):
-            weights = weight_setter._get_weights([])
-            
-            # Verify array length matches mock metagraph size
-            assert len(weights) == 5
-            
-            # Verify burn percentage
-            assert weights[burn_uid] == BURN_PERCENTAGE
-            
-            # Verify distribution key gets remaining weight (no miners so full remainder)
-            assert weights[DISTRIBUTION_KEY_UID] == 1 - BURN_PERCENTAGE
-            
-            # Verify all other weights are 0
-            for i in range(5):
-                if i != burn_uid and i != DISTRIBUTION_KEY_UID:
-                    assert weights[i] == 0.0
+        weights = weight_setter._get_weights([])
+        
+        # Verify array length matches mock metagraph size
+        assert len(weights) == 5
+        
+        # With no onboarded miners, all weights should be 0
+        for i in range(5):
+            assert weights[i] == 0.0
+        
+        # Total weight should be 0
+        assert sum(weights) == 0.0
 
     def test_get_weights_single_onboarded_miner(self, weight_setter):
         """Test weight calculation with one onboarded miner"""
         onboarded_hotkeys = ["hk0"]  # First hotkey from mock metagraph
-        burn_uid = 4  # Use a burn_uid within the mock metagraph range (0-4)
         
-        with patch.object(weight_setter, '_get_burn_uid', return_value=burn_uid):
-            weights = weight_setter._get_weights(onboarded_hotkeys)
-            
-            # Verify array length matches mock metagraph size
-            assert len(weights) == 5
-            
-            # Verify burn percentage
-            assert weights[burn_uid] == BURN_PERCENTAGE
-            
-            # Verify miner incentive
-            assert weights[0] == REG_MAINTAINENCE_INCENTIVE  # uid 0 corresponds to hk0
-            
-            # Calculate expected distribution key weight
-            expected_distribution = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * 1)
-            assert weights[DISTRIBUTION_KEY_UID] == expected_distribution
-            
-            # Verify total weights sum to 1
-            assert abs(sum(weights) - 1.0) < 1e-10
+        weights = weight_setter._get_weights(onboarded_hotkeys)
+        
+        # Verify array length matches mock metagraph size
+        assert len(weights) == 5
+        
+        # With one onboarded miner and no cost data, it gets full maintenance incentive
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        assert weights[0] == TOTAL_MAINTENANCE_INCENTIVE  # uid 0 corresponds to hk0
+        
+        # All other weights should be 0
+        for i in range(1, 5):
+            assert weights[i] == 0.0
+        
+        # Total should equal maintenance incentive
+        assert abs(sum(weights) - TOTAL_MAINTENANCE_INCENTIVE) < 1e-10
 
     def test_get_weights_multiple_onboarded_miners(self, weight_setter_large):
         """Test weight calculation with multiple onboarded miners"""
         onboarded_hotkeys = ["hk0", "hk2", "hk5"]  # UIDs 0, 2, 5
-        burn_uid = 9  # Use a burn_uid within the large mock metagraph range (0-9)
         
-        with patch.object(weight_setter_large, '_get_burn_uid', return_value=burn_uid):
-            weights = weight_setter_large._get_weights(onboarded_hotkeys)
-            
-            # Verify array length matches large mock metagraph size
-            assert len(weights) == 10
-            
-            # Verify burn percentage
-            assert weights[burn_uid] == BURN_PERCENTAGE
-            
-            # Verify miner incentives for onboarded miners
-            assert weights[0] == REG_MAINTAINENCE_INCENTIVE  # hk0
-            assert weights[2] == REG_MAINTAINENCE_INCENTIVE  # hk2
-            assert weights[5] == REG_MAINTAINENCE_INCENTIVE  # hk5
-            
-            # Calculate expected distribution key weight based on provided hotkeys count
-            num_onboarded = len(onboarded_hotkeys)
-            expected_distribution = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * num_onboarded)
-            assert weights[DISTRIBUTION_KEY_UID] == expected_distribution
-            
-            # Verify total weights sum to 1
-            assert abs(sum(weights) - 1.0) < 1e-10
+        weights = weight_setter_large._get_weights(onboarded_hotkeys)
+        
+        # Verify array length matches large mock metagraph size
+        assert len(weights) == 10
+        
+        # With multiple onboarded miners and no cost data, they share maintenance incentive equally
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        expected_per_miner = TOTAL_MAINTENANCE_INCENTIVE / len(onboarded_hotkeys)
+        
+        # Verify miner incentives for onboarded miners
+        assert abs(weights[0] - expected_per_miner) < 1e-10  # hk0
+        assert abs(weights[2] - expected_per_miner) < 1e-10  # hk2
+        assert abs(weights[5] - expected_per_miner) < 1e-10  # hk5
+        
+        # All other weights should be 0
+        for i in [1, 3, 4, 6, 7, 8, 9]:
+            assert weights[i] == 0.0
+        
+        # Verify total weights sum to maintenance incentive
+        assert abs(sum(weights) - TOTAL_MAINTENANCE_INCENTIVE) < 1e-10
 
     def test_get_weights_all_miners_onboarded(self, weight_setter_large):
         """Test weight calculation when all miners in metagraph are onboarded"""
         all_hotkeys = [f"hk{i}" for i in range(10)]  # All hotkeys from metagraph
-        burn_uid = 9  # Use a burn_uid within the large mock metagraph range (0-9)
         
-        with patch.object(weight_setter_large, '_get_burn_uid', return_value=burn_uid):
-            weights = weight_setter_large._get_weights(all_hotkeys)
-            
-            # Verify array length matches large mock metagraph size
-            assert len(weights) == 10
-            
-            # Verify burn percentage
-            assert weights[burn_uid] == BURN_PERCENTAGE
-            
-            # Most miners get incentive, but UID 1 (hk1) gets overwritten by distribution calc
-            # and UID 9 (hk9) gets overwritten by burn assignment
-            for i in range(10):
-                if i == DISTRIBUTION_KEY_UID:  # UID 1 gets overwritten
-                    # This tests the bug: hk1 incentive is counted but overwritten
-                    num_onboarded = len(all_hotkeys)
-                    expected_distribution = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * num_onboarded)
-                    assert weights[i] == expected_distribution
-                elif i == burn_uid:  # Burn UID gets burn percentage, overwriting miner incentive
-                    assert weights[i] == BURN_PERCENTAGE
-                else:
-                    assert weights[i] == REG_MAINTAINENCE_INCENTIVE
-            
-            # Total will be 1 - 2*REG_MAINTAINENCE_INCENTIVE due to two bugs:
-            # 1. UID 1 (distribution key) overwrites miner incentive
-            # 2. UID 9 (burn uid) overwrites miner incentive
-            expected_total = 1.0 - (2 * REG_MAINTAINENCE_INCENTIVE)
-            assert abs(sum(weights) - expected_total) < 1e-10
+        weights = weight_setter_large._get_weights(all_hotkeys)
+        
+        # Verify array length matches large mock metagraph size
+        assert len(weights) == 10
+        
+        # With all miners onboarded and no cost data, they share maintenance incentive equally
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        expected_per_miner = TOTAL_MAINTENANCE_INCENTIVE / len(all_hotkeys)
+        
+        # All miners should get equal share of maintenance incentive
+        for i in range(10):
+            assert abs(weights[i] - expected_per_miner) < 1e-10
+        
+        # Total should equal maintenance incentive
+        assert abs(sum(weights) - TOTAL_MAINTENANCE_INCENTIVE) < 1e-10
 
     def test_get_weights_hotkey_not_in_metagraph(self, weight_setter):
-        """Test that hotkeys not in metagraph don't affect weights but do affect distribution calculation"""
+        """Test that hotkeys not in metagraph are filtered out and don't get weights"""
         onboarded_hotkeys = ["hk0", "nonexistent_hotkey", "hk2"]  # 3 hotkeys, but only 2 exist in metagraph
-        burn_uid = 4  # Use a burn_uid within the mock metagraph range (0-4)
         
-        with patch.object(weight_setter, '_get_burn_uid', return_value=burn_uid):
+        weights = weight_setter._get_weights(onboarded_hotkeys)
+        
+        # Verify array length matches mock metagraph size
+        assert len(weights) == 5
+        
+        # Only hk0 and hk2 should get weights (UIDs 0 and 2), sharing maintenance incentive
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        expected_per_miner = TOTAL_MAINTENANCE_INCENTIVE / 2  # Only 2 valid miners
+        
+        assert abs(weights[0] - expected_per_miner) < 1e-10  # hk0
+        assert abs(weights[2] - expected_per_miner) < 1e-10  # hk2
+        
+        # All other weights should be 0
+        for i in [1, 3, 4]:
+            assert weights[i] == 0.0
+        
+        # Total should equal maintenance incentive
+        assert abs(sum(weights) - TOTAL_MAINTENANCE_INCENTIVE) < 1e-10
+
+    def test_get_weights_different_scenarios(self, weight_setter):
+        """Test weight calculation with different onboarded miner scenarios"""
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        
+        # Test single miner scenarios
+        for miner_hotkey in ["hk0", "hk1", "hk2", "hk3", "hk4"]:
+            onboarded_hotkeys = [miner_hotkey]
             weights = weight_setter._get_weights(onboarded_hotkeys)
             
             # Verify array length matches mock metagraph size
             assert len(weights) == 5
             
-            # Only hk0 and hk2 should get weights (UIDs 0 and 2)
-            assert weights[0] == REG_MAINTAINENCE_INCENTIVE
-            assert weights[2] == REG_MAINTAINENCE_INCENTIVE
+            # Only the specified miner should get weight
+            miner_uid = int(miner_hotkey[2])  # Extract uid from "hkX"
+            assert weights[miner_uid] == TOTAL_MAINTENANCE_INCENTIVE
             
-            # Distribution calculation uses ALL provided hotkeys (including nonexistent)
-            num_provided_hotkeys = len(onboarded_hotkeys)  # 3, including nonexistent
-            expected_distribution = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * num_provided_hotkeys)
-            assert weights[DISTRIBUTION_KEY_UID] == expected_distribution
+            # All other weights should be 0
+            for i in range(5):
+                if i != miner_uid:
+                    assert weights[i] == 0.0
             
-            # Verify burn percentage
-            assert weights[burn_uid] == BURN_PERCENTAGE
-            
-            # Total will be less than 1 because distribution calculated for 3 but only 2 got incentive
-            expected_total = 1.0 - REG_MAINTAINENCE_INCENTIVE  # Short by 1 incentive
-            assert abs(sum(weights) - expected_total) < 1e-10
-
-    def test_get_weights_different_burn_uids(self, weight_setter):
-        """Test weight calculation with different burn UIDs"""
-        onboarded_hotkeys = ["hk0"]
-        
-        # Test with different burn UIDs that are within the mock metagraph range
-        for burn_uid in [2, 3, 4]:
-            with patch.object(weight_setter, '_get_burn_uid', return_value=burn_uid):
-                weights = weight_setter._get_weights(onboarded_hotkeys)
-                
-                # Verify array length matches mock metagraph size
-                assert len(weights) == 5
-                
-                # Verify burn is set at correct UID
-                assert weights[burn_uid] == BURN_PERCENTAGE
-                
-                # Verify other positions except miner and distribution key
-                for i in range(5):
-                    if i == burn_uid:
-                        continue
-                    elif i == 0:  # miner uid
-                        assert weights[i] == REG_MAINTAINENCE_INCENTIVE
-                    elif i == DISTRIBUTION_KEY_UID:
-                        expected = 1 - BURN_PERCENTAGE - REG_MAINTAINENCE_INCENTIVE
-                        assert weights[i] == expected
-                    else:
-                        assert weights[i] == 0.0
+            # Total should equal maintenance incentive
+            assert abs(sum(weights) - TOTAL_MAINTENANCE_INCENTIVE) < 1e-10
 
     def test_get_weights_weight_conservation(self, weight_setter_large):
-        """Test that weights sum correctly (noting bugs with UID collisions and nonexistent hotkeys)"""
+        """Test that weights sum correctly with the maintenance incentive system"""
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        
         test_cases = [
-            ([], 1.0),  # No miners - perfect sum
-            (["hk0"], 1.0),  # One miner, no collision - perfect sum
-            (["hk0", "hk3"], 1.0),  # Two miners, no collision - perfect sum
-            ([f"hk{i}" for i in [0, 2, 3, 4, 5]], 1.0),  # Some miners, no collision - perfect sum
-            ([f"hk{i}" for i in range(10)], 1.0 - (2 * REG_MAINTAINENCE_INCENTIVE)),  # All miners including UID 1 and burn UID collisions - both bugs occur
-            (["hk1"], 1.0 - REG_MAINTAINENCE_INCENTIVE),  # Just UID 1 collision - bug occurs
-            (["hk0", "nonexistent"], 1.0 - REG_MAINTAINENCE_INCENTIVE),  # Nonexistent hotkey causes shortage
+            ([], 0.0),  # No miners - zero sum
+            (["hk0"], TOTAL_MAINTENANCE_INCENTIVE),  # One miner gets full maintenance incentive
+            (["hk0", "hk3"], TOTAL_MAINTENANCE_INCENTIVE),  # Two miners share maintenance incentive
+            (["hk0", "hk2", "hk3", "hk4", "hk5"], TOTAL_MAINTENANCE_INCENTIVE),  # Multiple miners share maintenance incentive
+            ([f"hk{i}" for i in range(10)], TOTAL_MAINTENANCE_INCENTIVE),  # All miners share maintenance incentive
+            (["hk0", "nonexistent"], TOTAL_MAINTENANCE_INCENTIVE),  # Nonexistent hotkey ignored, only valid miner gets incentive
         ]
         
-        burn_uid = 9  # Use a burn_uid within the large mock metagraph range (0-9)
         for onboarded_hotkeys, expected_sum in test_cases:
-            with patch.object(weight_setter_large, '_get_burn_uid', return_value=burn_uid):
-                weights = weight_setter_large._get_weights(onboarded_hotkeys)
-                
-                # Verify array length matches large mock metagraph size
-                assert len(weights) == 10
-                
-                # Verify weights sum to expected value
-                total_weight = sum(weights)
-                assert abs(total_weight - expected_sum) < 1e-10, f"Weights sum to {total_weight}, expected {expected_sum} for hotkeys {onboarded_hotkeys}"
-
-    def test_get_weights_mathematical_consistency(self, weight_setter_large):
-        """Test mathematical relationships between different weight components"""
-        onboarded_hotkeys = ["hk0", "hk4", "hk7"]  # Avoiding UID 1 which is DISTRIBUTION_KEY_UID
-        burn_uid = 9  # Use a burn_uid within the large mock metagraph range (0-9)
-        
-        with patch.object(weight_setter_large, '_get_burn_uid', return_value=burn_uid):
             weights = weight_setter_large._get_weights(onboarded_hotkeys)
             
             # Verify array length matches large mock metagraph size
             assert len(weights) == 10
             
-            # Extract components
-            burn_weight = weights[burn_uid]
-            distribution_weight = weights[DISTRIBUTION_KEY_UID]
-            miner_weights_sum = sum(weights[i] for i in [0, 4, 7])  # UIDs for the hotkeys
-            
-            # Test mathematical relationships
-            assert burn_weight == BURN_PERCENTAGE
-            assert miner_weights_sum == REG_MAINTAINENCE_INCENTIVE * len(onboarded_hotkeys)
-            assert distribution_weight == 1 - burn_weight - miner_weights_sum
-            assert abs(burn_weight + distribution_weight + miner_weights_sum - 1.0) < 1e-10
+            # Verify weights sum to expected value
+            total_weight = sum(weights)
+            assert abs(total_weight - expected_sum) < 1e-10, f"Weights sum to {total_weight}, expected {expected_sum} for hotkeys {onboarded_hotkeys}"
 
-    def test_get_weights_edge_case_burn_uid_collision(self, weight_setter):
-        """Test behavior when burn UID collides with distribution key UID"""
-        onboarded_hotkeys = ["hk0"]
+    def test_get_weights_mathematical_consistency(self, weight_setter_large):
+        """Test mathematical relationships in the cost-based proportional system"""
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
         
-        # Test when burn UID is same as distribution key UID
-        with patch.object(weight_setter, '_get_burn_uid', return_value=DISTRIBUTION_KEY_UID):
-            weights = weight_setter._get_weights(onboarded_hotkeys)
-            
-            # Verify array length matches mock metagraph size
-            assert len(weights) == 5
-            
-            # The distribution key calculation overwrites the burn percentage
-            # This is actually a bug in the original logic, but we test the actual behavior
-            expected_distribution = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * len(onboarded_hotkeys))
-            assert weights[DISTRIBUTION_KEY_UID] == expected_distribution
-            
-            # The burn weight should be overwritten by distribution weight
-            assert weights[DISTRIBUTION_KEY_UID] != BURN_PERCENTAGE
-            
-            # The total weight will be incorrect because burn allocation is lost
-            miner_weight = REG_MAINTAINENCE_INCENTIVE
-            expected_total = expected_distribution + miner_weight
-            actual_total = sum(weights)
-            
-            # This will be less than 1.0 because the burn weight was overwritten
-            assert abs(actual_total - expected_total) < 1e-10
-            assert actual_total < 1.0
-
-    def test_get_weights_miner_distribution_key_collision(self, weight_setter):
-        """Test behavior when a miner hotkey maps to DISTRIBUTION_KEY_UID"""
-        # hk1 maps to UID 1, which is DISTRIBUTION_KEY_UID
-        onboarded_hotkeys = ["hk1"]
-        burn_uid = 4  # Use a burn_uid within the mock metagraph range (0-4)
+        # Test case 1: Pure maintenance (no cost data)
+        onboarded_hotkeys = ["hk0", "hk4", "hk7"]
+        weights = weight_setter_large._get_weights(onboarded_hotkeys)
         
-        with patch.object(weight_setter, '_get_burn_uid', return_value=burn_uid):
-            weights = weight_setter._get_weights(onboarded_hotkeys)
-            
-            # Verify array length matches mock metagraph size
-            assert len(weights) == 5
-            
-            # The miner incentive gets set first, then overwritten by distribution weight
-            expected_distribution = 1 - BURN_PERCENTAGE - (REG_MAINTAINENCE_INCENTIVE * len(onboarded_hotkeys))
-            assert weights[DISTRIBUTION_KEY_UID] == expected_distribution
-            
-            # The miner weight is overwritten
-            assert weights[DISTRIBUTION_KEY_UID] != REG_MAINTAINENCE_INCENTIVE
-            
-            # Verify burn weight is correct
-            assert weights[burn_uid] == BURN_PERCENTAGE
-            
-            # Total is 1 - REG_MAINTAINENCE_INCENTIVE due to the bug
-            expected_total = 1.0 - REG_MAINTAINENCE_INCENTIVE
-            assert abs(sum(weights) - expected_total) < 1e-10
+        # Verify array length matches large mock metagraph size
+        assert len(weights) == 10
+        
+        # Each miner should get equal share of maintenance incentive
+        expected_per_miner = TOTAL_MAINTENANCE_INCENTIVE / len(onboarded_hotkeys)
+        assert abs(weights[0] - expected_per_miner) < 1e-10  # hk0
+        assert abs(weights[4] - expected_per_miner) < 1e-10  # hk4  
+        assert abs(weights[7] - expected_per_miner) < 1e-10  # hk7
+        
+        # All other weights should be 0
+        for i in [1, 2, 3, 5, 6, 8, 9]:
+            assert weights[i] == 0.0
+        
+        # Total should equal maintenance incentive
+        assert abs(sum(weights) - TOTAL_MAINTENANCE_INCENTIVE) < 1e-10
+        
+        # Test case 2: Mixed cost data and maintenance
+        weight_setter_large.database_manager.query_with_values.return_value = [('hk0', 100), ('hk4', 200)]
+        weights = weight_setter_large._get_weights(onboarded_hotkeys)
+        
+        # hk0 and hk4 get proportional weights based on costs (reduced by maintenance)
+        # hk7 gets maintenance incentive
+        maintenance_multiplier = 1 - TOTAL_MAINTENANCE_INCENTIVE
+        expected_hk0 = (100 / 300) * maintenance_multiplier  # 1/3 * 0.99
+        expected_hk4 = (200 / 300) * maintenance_multiplier  # 2/3 * 0.99
+        expected_hk7 = TOTAL_MAINTENANCE_INCENTIVE  # Full maintenance for hk7
+        
+        assert abs(weights[0] - expected_hk0) < 1e-10
+        assert abs(weights[4] - expected_hk4) < 1e-10
+        assert abs(weights[7] - expected_hk7) < 1e-10
+        
+        # Total should be approximately 1.0
+        assert abs(sum(weights) - 1.0) < 1e-10
 
-    def test_get_weights_zero_incentive_edge_case(self, weight_setter):
-        """Test mathematical edge case when many miners are onboarded including collision"""
-        # This tests numerical stability when many miners are onboarded
-        # Create a scenario with all 5 miners onboarded from the mock metagraph
+    def test_get_weights_with_cost_proportions(self, weight_setter):
+        """Test weight calculation when miners have cost proportions from the database"""
+        onboarded_hotkeys = ["hk0", "hk1", "hk2"]
+        
+        # Mock database to return cost data for some miners
+        weight_setter.database_manager.query_with_values.return_value = [('hk0', 100), ('hk2', 300)]
+        
+        weights = weight_setter._get_weights(onboarded_hotkeys)
+        
+        # Verify array length matches mock metagraph size
+        assert len(weights) == 5
+        
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        
+        # hk0 and hk2 get proportional weights (reduced by maintenance incentive)
+        # hk1 gets maintenance incentive (no cost data)
+        maintenance_multiplier = 1 - TOTAL_MAINTENANCE_INCENTIVE
+        total_costs = 100 + 300  # 400
+        
+        expected_hk0 = (100 / total_costs) * maintenance_multiplier  # 1/4 * 0.99 = 0.2475
+        expected_hk2 = (300 / total_costs) * maintenance_multiplier  # 3/4 * 0.99 = 0.7425
+        expected_hk1 = TOTAL_MAINTENANCE_INCENTIVE  # 0.01
+        
+        assert abs(weights[0] - expected_hk0) < 1e-10  # hk0
+        assert abs(weights[1] - expected_hk1) < 1e-10  # hk1
+        assert abs(weights[2] - expected_hk2) < 1e-10  # hk2
+        
+        # Other weights should be 0
+        assert weights[3] == 0.0
+        assert weights[4] == 0.0
+        
+        # Total should be approximately 1.0
+        assert abs(sum(weights) - 1.0) < 1e-10
+
+    def test_get_weights_large_scale_distribution(self, weight_setter):
+        """Test weight distribution with all miners in a small metagraph"""
+        # Test with all 5 miners from the mock metagraph
         all_hotkeys = ["hk0", "hk1", "hk2", "hk3", "hk4"]
-        burn_uid = 3  # Use a burn_uid within the mock metagraph range (0-4)
         
-        with patch.object(weight_setter, '_get_burn_uid', return_value=burn_uid):
-            weights = weight_setter._get_weights(all_hotkeys)
-            
-            # Verify array length matches mock metagraph size
-            assert len(weights) == 5
-            
-            # Check that distribution weight is calculated correctly
-            total_incentive = REG_MAINTAINENCE_INCENTIVE * len(all_hotkeys)
-            expected_distribution = 1 - BURN_PERCENTAGE - total_incentive
-            
-            # Distribution key gets the calculated value (noting hk1/UID1 collision)
-            assert weights[DISTRIBUTION_KEY_UID] == expected_distribution
-            
-            # Burn weight should be correct
-            assert weights[burn_uid] == BURN_PERCENTAGE
-            
-            # The math adds up to 1 - 2*REG_MAINTAINENCE_INCENTIVE due to collision bugs:
-            # 1. UID 1 (distribution key) overwrites hk1 miner incentive  
-            # 2. UID 3 (burn uid) overwrites hk3 miner incentive
-            expected_total = 1.0 - (2 * REG_MAINTAINENCE_INCENTIVE)
-            assert abs(sum(weights) - expected_total) < 1e-10
+        weights = weight_setter._get_weights(all_hotkeys)
+        
+        # Verify array length matches mock metagraph size
+        assert len(weights) == 5
+        
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        
+        # Each miner should get equal share of maintenance incentive
+        expected_per_miner = TOTAL_MAINTENANCE_INCENTIVE / len(all_hotkeys)
+        
+        for i in range(5):
+            assert abs(weights[i] - expected_per_miner) < 1e-10
+        
+        # Total should equal maintenance incentive
+        assert abs(sum(weights) - TOTAL_MAINTENANCE_INCENTIVE) < 1e-10
 
-    def test_get_weights_bug_documentation(self, weight_setter):
-        """This test documents a bug in the WeightSetter implementation.
+    def test_get_weights_cost_based_system_documentation(self, weight_setter):
+        """This test documents the cost-based proportional weight system.
         
-        When a miner's UID equals DISTRIBUTION_KEY_UID (1), the miner's incentive
-        is counted in the distribution calculation but then gets overwritten,
-        causing the total weight to be less than 1.0 by exactly REG_MAINTAINENCE_INCENTIVE.
-        
-        This bug occurs because:
-        1. The miner gets REG_MAINTAINENCE_INCENTIVE assigned to weights[1]
-        2. The distribution calculation includes this miner in the count
-        3. weights[1] gets overwritten with the distribution value
-        4. The incentive amount is lost from the total
+        The WeightSetter now uses a cost-based approach where:
+        1. Miners with cost data get proportional weights based on their execution costs
+        2. The proportional weights are scaled by (1 - TOTAL_MAINTENANCE_INCENTIVE)
+        3. Miners without cost data share the TOTAL_MAINTENANCE_INCENTIVE equally
+        4. Miners not onboarded get no weight
         """
         
-        burn_uid = 4  # Use a burn_uid within the mock metagraph range (0-4)
-        # Test with just the problematic miner
-        with patch.object(weight_setter, '_get_burn_uid', return_value=burn_uid):
-            weights = weight_setter._get_weights(["hk1"])  # hk1 maps to UID 1
-            
-            # Verify array length matches mock metagraph size
-            assert len(weights) == 5
-            
-            # Document the bug: total is short by exactly the incentive amount
-            total = sum(weights)
-            expected_shortage = REG_MAINTAINENCE_INCENTIVE
-            actual_shortage = 1.0 - total
-            
-            assert abs(actual_shortage - expected_shortage) < 1e-10, (
-                f"Bug: Total weight shortage should be {expected_shortage}, "
-                f"but got {actual_shortage}"
-            )
-            
-            # The distribution weight calculation included the miner but weight was overwritten
-            expected_distribution_value = 1 - BURN_PERCENTAGE - REG_MAINTAINENCE_INCENTIVE
-            assert weights[DISTRIBUTION_KEY_UID] == expected_distribution_value
-            
-            # Burn weight is correct
-            assert weights[burn_uid] == BURN_PERCENTAGE
-            
-            # All other weights are 0
-            for i in range(5):
-                if i not in [DISTRIBUTION_KEY_UID, burn_uid]:
-                    assert weights[i] == 0.0
+        from qbittensor.validator.weights.WeightSetter import TOTAL_MAINTENANCE_INCENTIVE
+        
+        # Test 1: Pure maintenance case (no cost data)
+        weight_setter.database_manager.query_with_values.return_value = []
+        weights = weight_setter._get_weights(["hk1"])
+        
+        assert len(weights) == 5
+        assert weights[1] == TOTAL_MAINTENANCE_INCENTIVE  # hk1 gets full maintenance
+        
+        for i in [0, 2, 3, 4]:
+            assert weights[i] == 0.0
+        
+        total = sum(weights)
+        assert abs(total - TOTAL_MAINTENANCE_INCENTIVE) < 1e-10
+        
+        # Test 2: Mixed cost and maintenance case
+        weight_setter.database_manager.query_with_values.return_value = [('hk1', 200)]
+        weights = weight_setter._get_weights(["hk1", "hk3"])
+        
+        # hk1 has cost data, hk3 needs maintenance
+        # hk1 gets: (200/200) * (1 - 0.01) = 1.0 * 0.99 = 0.99
+        # hk3 gets: 0.01 (full maintenance incentive since it's the only maintenance miner)
+        
+        assert abs(weights[1] - 0.99) < 1e-10  # hk1 with cost data
+        assert abs(weights[3] - 0.01) < 1e-10  # hk3 with maintenance
+        
+        for i in [0, 2, 4]:
+            assert weights[i] == 0.0
+        
+        # Total should be 1.0
+        assert abs(sum(weights) - 1.0) < 1e-10
 
 
