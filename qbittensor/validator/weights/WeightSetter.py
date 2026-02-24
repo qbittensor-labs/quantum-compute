@@ -51,7 +51,6 @@ class WeightSetter:
         onboarded_miner_hotkeys = self._get_onboarded_miner_hotkeys()
         weights: List[float] = self._get_weights(onboarded_miner_hotkeys)
         
-        bt.logging.info(f"Non-Zero Weights...")
         self._print_nonzero_weights(weights)
         
         self.telemetry_service.vali_record_weights(weights)
