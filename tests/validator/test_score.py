@@ -233,3 +233,46 @@ def test_record_execution_and_time_received_calls_metrics(scorer: Scorer):
         scorer._record_time_received("hotkey", "jobid")
         assert mock_insert_job_sent.called
         assert mock_update_time_received.called
+
+
+class TestPatchJobRejectedSerialization:
+    """Verify _patch_job_rejected sends execution_data as a dict, not a double-serialized JSON string."""
+
+    def test_execution_data_sent_as_dict(self, scorer: Scorer):
+        """The body sent to request_manager.patch must contain execution_data as a dict, not a string."""
+        exec_data = {"jobId": "aws:rigetti:qpu:ankaa-3-d557-qjob-abc123"}
+        with patch.object(scorer.request_manager, "patch") as mock_patch:
+            scorer._patch_job_rejected("exec-001", "qasm3 conversion error", exec_data)
+            mock_patch.assert_called_once()
+            body = mock_patch.call_args[0][1]
+            assert isinstance(body["execution_data"], dict), (
+                f"execution_data should be a dict, got {type(body['execution_data']).__name__}"
+            )
+            assert body["execution_data"] == exec_data
+
+    def test_execution_data_defaults_to_empty_dict(self, scorer: Scorer):
+        """When no execution_data is provided, the body should contain an empty dict, not an empty string."""
+        with patch.object(scorer.request_manager, "patch") as mock_patch:
+            scorer._patch_job_rejected("exec-002", "Miner reported failure")
+            mock_patch.assert_called_once()
+            body = mock_patch.call_args[0][1]
+            assert body["execution_data"] == {}
+            assert isinstance(body["execution_data"], dict)
+
+    def test_execution_data_none_becomes_empty_dict(self, scorer: Scorer):
+        """Explicitly passing None should produce an empty dict in the body."""
+        with patch.object(scorer.request_manager, "patch") as mock_patch:
+            scorer._patch_job_rejected("exec-003", "error msg", None)
+            mock_patch.assert_called_once()
+            body = mock_patch.call_args[0][1]
+            assert body["execution_data"] == {}
+            assert isinstance(body["execution_data"], dict)
+
+    def test_error_message_preserved_in_body(self, scorer: Scorer):
+        """The error message string must arrive in the body unmodified."""
+        error = "Failed to convert 'qasm3' to 'braket'"
+        with patch.object(scorer.request_manager, "patch") as mock_patch:
+            scorer._patch_job_rejected("exec-004", error, {"jobId": "j1"})
+            body = mock_patch.call_args[0][1]
+            assert body["message"] == error
+            assert body["status"] == ExecutionStatus.FAILED
