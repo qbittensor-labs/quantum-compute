@@ -1,4 +1,3 @@
-import json
 import threading
 from typing import Any, Dict, List
 import bittensor as bt
@@ -112,13 +111,12 @@ class Scorer:
         values: List[tuple] = [(miner_hotkey, execution_id, now) for execution_id in execution_ids]
         self.database_manager.query_and_commit_many(query, values)
 
-    def _patch_job_rejected(self, execution_id: str, message: str, execution_data: object | None = {}) -> None:
+    def _patch_job_rejected(self, execution_id: str, message: str, execution_data: object | None = None) -> None:
         """Send the request back to the job server because retries exceeded"""
-        execution_data_str: str = json.dumps(execution_data) if execution_data is not None else ""
-        body: Dict[str, str] = {
+        body: Dict[str, Any] = {
             "status": ExecutionStatus.FAILED,
             "message": message,
-            "execution_data": execution_data_str
+            "execution_data": execution_data if execution_data is not None else {}
         }
         self._patch(execution_id, body)
     
