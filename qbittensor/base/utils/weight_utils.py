@@ -157,7 +157,7 @@ def process_weights_for_netuid(
 
     # Get latest metagraph from chain if metagraph is None.
     if metagraph is None:
-        metagraph = subtensor.metagraph(netuid)
+        metagraph = subtensor.metagraph(netuid, mechid=0)
 
     # Cast weights to floats.
     if not isinstance(weights, np.ndarray) or weights.dtype != np.float32:

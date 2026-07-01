@@ -31,6 +31,9 @@ all_miners: List[Miner] = verified_miners + unverified_miners
 def setup() -> MinerManager:
     """Runs before each test."""
     db_manager = setup_db()
+    # ensure clean state for this test (other tests may leave rows)
+    from tests.validator.utils import cleanup_db
+    cleanup_db(db_manager)
     metagraph: bt.Metagraph = get_mock_metagraph(num_axons=len(all_miners))
     return MinerManager(db_manager, metagraph)
 

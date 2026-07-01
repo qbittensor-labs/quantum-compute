@@ -4,7 +4,6 @@ from qbittensor.utils.request.JWTManager import JWT
 from qbittensor.utils.request.RequestManager import RequestManager
 from qbittensor.utils.timestamping import timestamp
 from tests.test_utils import get_mock_keypair
-import pytest
 from unittest import mock
 from datetime import timedelta
 import requests

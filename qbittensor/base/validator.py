@@ -269,7 +269,8 @@ class BaseValidatorNeuron(BaseNeuron):
         bt.logging.debug("uint_uids", uint_uids)
 
         # Set the weights on chain via our subtensor connection.
-        result, msg = self.subtensor.set_weights(
+        # v10 returns ExtrinsicResponse (has .success / .message); support old tuple for compat.
+        result = self.subtensor.set_weights(
             wallet=self.wallet,
             netuid=self.config.netuid,
             uids=uint_uids,
@@ -278,7 +279,16 @@ class BaseValidatorNeuron(BaseNeuron):
             wait_for_inclusion=False,
             version_key=self.spec_version,
         )
-        if result is True:
+        if hasattr(result, "success"):
+            success = bool(result.success)
+            msg = getattr(result, "message", "") or getattr(result, "error_message", "")
+        elif isinstance(result, (list, tuple)):
+            success = bool(result[0]) if result else False
+            msg = result[1] if len(result) > 1 else ""
+        else:
+            success = bool(result)
+            msg = ""
+        if success:
             bt.logging.info("set_weights on chain successfully!")
         else:
             bt.logging.error("set_weights failed", msg)

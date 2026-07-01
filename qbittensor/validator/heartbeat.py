@@ -9,7 +9,7 @@ import qbittensor
 class Heartbeat:
     
     def __init__(self, request_manager: RequestManager):
-        request_manager = request_manager
+        self.request_manager = request_manager
         self.telemetry_service = TelemetryService(request_manager)
         self.timer = Timer(timeout=timedelta(minutes=5), run=self.send_version_info, run_on_start=True)
         

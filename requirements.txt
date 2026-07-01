@@ -8,10 +8,10 @@ asyncstdlib==3.13.1
 attrs==25.3.0
 backoff==2.2.1
 base58==2.1.1
-bittensor==9.9.0
-bittensor-cli==9.10.1
+bittensor==10.5.0
+bittensor-cli==10.1.0
 bittensor-drand==1.0.0
-bittensor-wallet==4.0.0
+bittensor-wallet==4.1.0
 bt-decode==0.6.0
 certifi==2025.8.3
 charset-normalizer==3.4.3
@@ -72,6 +72,7 @@ Pygments==2.19.2
 pytest==8.4.1
 pytest-asyncio==1.1.0
 pytest-cov==6.2.1
+flake8==7.1.1
 python-dotenv==1.1.1
 python-multipart==0.0.20
 python-statemachine==2.5.0

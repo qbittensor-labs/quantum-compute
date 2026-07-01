@@ -2,16 +2,13 @@ from datetime import timedelta, datetime, timezone
 import bittensor as bt
 from typing import Dict, List, Tuple
 
-from qbittensor.validator.reward.burn_uid import get_burn_uid
 from qbittensor.utils.telemetry.TelemetryService import TelemetryService
 from pkg.database.database_manager import DatabaseManager
 from qbittensor.utils.Timer import Timer
 from qbittensor.utils.request.RequestManager import RequestManager
 from qbittensor.validator.weights.WeightPublisher import WeightPublisher
 
-DISTRIBUTION_KEY_UID = 220
 LOG_NS = "🏋  [setting weights]"
-BURN_PERCENTAGE = 0.90
 LOOKBACK_PERIOD = timedelta(days=14)
 REG_MAINTAINENCE_INCENTIVE = 0.001
 TOTAL_MAINTENANCE_INCENTIVE = 0.01
@@ -122,14 +119,6 @@ class WeightSetter:
                 weights[uid] = maintenance_amount
                 
         return weights
-    
-    def _get_burn_uid(self) -> int:
-        """Use optional util if present; otherwise constant fallback for tests."""
-        try:
-
-            return get_burn_uid(self.metagraph)
-        except Exception:
-            return 34 # owner uid
         
     def _get_onboarded_miner_hotkeys(self) -> List[str]:
         """Fetch list of onboarded miners from the job server."""

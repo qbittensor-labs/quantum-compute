@@ -1,0 +1,7 @@
+[flake8]
+max-line-length = 100
+ignore = E501,W503,E203,W293,W291,W292,E302,E305,E261
+exclude = .git,__pycache__,build,dist,.eggs,*.egg-info,venv,.venv
+per-file-ignores =
+    # allow some in tests or generated
+    tests/*:E501,E265,E114,E116,E402,F401,F811,E126,E121,E125,E306,E271,W391

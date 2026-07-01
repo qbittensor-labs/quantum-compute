@@ -1,30 +1,34 @@
 import bittensor as bt
+from unittest.mock import MagicMock
 
 from pkg.database.database_manager import DatabaseManager
 from tests.miner.constants import VALIDATOR_TEST_DB_NAME
 
 
-def get_mock_metagraph(num_axons: int) -> bt.Metagraph:
-    """Return a mock bt.Metagraph instance for testing"""
-    netuid = 2
-    network = "test" 
-    lite = True
-    sync = False
-    metagraph = bt.metagraph(netuid, network, lite, sync)
-    metagraph.axons = []
-    hotkeys = []
-    for i in range(num_axons):
-        axon = bt.axon()
-        # Set hotkey attribute for the axon
-        axon.hotkey = f"hk{i}"
-        metagraph.axons.append(axon)
-        hotkeys.append(f"hk{i}")
-    
-    # Use setattr to set the private attribute that hotkeys property uses
-    # In bittensor, hotkeys property typically derives from axons
-    # We'll mock it by overriding the property directly
-    type(metagraph).hotkeys = property(lambda self: hotkeys)
-    return metagraph
+def get_mock_metagraph(num_axons: int = 5) -> "bt.Metagraph":
+    """Return a lightweight mock bt.Metagraph for unit tests (works with bittensor v10+)."""
+    mg = MagicMock(spec=bt.Metagraph)
+    hotkeys = [f"hk{i}" for i in range(num_axons)]
+    axons = []
+    for i, hk in enumerate(hotkeys):
+        axon = MagicMock()
+        axon.hotkey = hk
+        axon.ip = "127.0.0.1"
+        axon.port = 8091 + i
+        axons.append(axon)
+
+    mg.hotkeys = hotkeys
+    mg.axons = axons
+    mg.n = num_axons
+    mg.uids = list(range(num_axons))
+    # Provide common attributes used by validators / weights / api code
+    import numpy as np
+    mg.S = np.ones(num_axons, dtype=float)
+    mg.validator_trust = np.full(num_axons, 0.5, dtype=float)
+    mg.last_update = {i: 0 for i in range(num_axons)}
+    mg.netuid = 2
+    mg.sync = MagicMock()
+    return mg
 
 def get_mock_keypair() -> bt.Keypair:
     """Return a mock bt.Keypair instance for testing"""

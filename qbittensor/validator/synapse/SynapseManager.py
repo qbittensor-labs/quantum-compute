@@ -63,7 +63,7 @@ class SynapseManager:
                 data = response.json()
                 return ComputeRequest.from_api_response(data)
             except ValueError:
-                bt.logging.error(f"❌ Failed to parse JSON /compute response from job server")
+                bt.logging.error("❌ Failed to parse JSON /compute response from job server")
                 return None
         else:
             bt.logging.error(f"❌ job server returned unexpected status code: {response.status_code}")

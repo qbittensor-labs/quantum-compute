@@ -53,7 +53,8 @@ class Miner(BaseMinerNeuron):
         
         bt.logging.trace(f"| {current_thread} | 🚚 Received synapse from validator '{validator_hotkey}'")
 
-        # Update the synapse by reference, adding all completed circuits from the database
+        # Update the synapse by reference, adding all completed circuits from the database.
+        # Do this *first* so success=True is set and response returns fast to dendrite.
         self._update_synapse_with_finished_executions(synapse)
 
         # Maintain the database        
@@ -66,20 +67,41 @@ class Miner(BaseMinerNeuron):
         if self._rate_limit():
             bt.logging.trace(f"| {current_thread} | 🚧 Rate limiting this request")
             synapse.rate_limited = True
+            return synapse
         
-        elif self._job_is_new(synapse.execution_id):
-            try:
-                response = requests.get(synapse.input_data_url, timeout=5)
-                response.raise_for_status()
-                self.jobs.submit(
-                    execution_id=synapse.execution_id,
-                    input_data_url=synapse.input_data_url,
-                    validator_hotkey=validator_hotkey,
-                    shots=synapse.shots,
-                )
-            except Exception as e:
-                bt.logging.debug(f"❌ Submit failed for execution {synapse.execution_id}: {e}")
-                
+        if self._job_is_new(synapse.execution_id):
+            # Offload the (potentially slow) download + submit so we don't block the axon
+            # forward and cause dendrite timeout -> spurious "Miner did not respond".
+            def _bg_submit():
+                try:
+                    response = requests.get(synapse.input_data_url, timeout=5)
+                    response.raise_for_status()
+                    self.jobs.submit(
+                        execution_id=synapse.execution_id,
+                        input_data_url=synapse.input_data_url,
+                        validator_hotkey=validator_hotkey,
+                        shots=synapse.shots,
+                    )
+                except Exception as e:
+                    bt.logging.debug(f"❌ Submit failed for execution {synapse.execution_id}: {e}")
+                    # Try to persist failure so collect responses will surface real error later.
+                    try:
+                        from qbittensor.miner.runtime.repository import persist_failed
+                        persist_failed(
+                            self.jobs,
+                            execution_id=synapse.execution_id,
+                            validator_hotkey=validator_hotkey,
+                            provider=None,
+                            provider_job_id=None,
+                            device_id=None,
+                            error_message=f"Provider submit failed: {e}",
+                            metadata=None,
+                        )
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_bg_submit, name=f"bg-submit-{synapse.execution_id[:8]}", daemon=True).start()
+
         return synapse
     
     def _rate_limit(self) -> bool:

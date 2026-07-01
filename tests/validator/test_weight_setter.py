@@ -1,17 +1,10 @@
 from datetime import timedelta
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from qbittensor.utils.request.JWTManager import JWT
 from qbittensor.utils.timestamping import timestamp
-from qbittensor.validator.weights.WeightSetter import (
-    WeightSetter, 
-    REG_MAINTAINENCE_INCENTIVE, 
-    BURN_PERCENTAGE
-)
-
-# Use a test-specific value that fits within test metagraph sizes
-DISTRIBUTION_KEY_UID = 1
+from qbittensor.validator.weights.WeightSetter import WeightSetter
 from tests.test_utils import get_mock_metagraph
 
 
@@ -54,12 +47,6 @@ def weight_setter(
         lambda self: fake_jwt
     )
     
-    # Patch DISTRIBUTION_KEY_UID to fit within mock metagraph size (5 hotkeys)
-    monkeypatch.setattr(
-        "qbittensor.validator.weights.WeightSetter.DISTRIBUTION_KEY_UID",
-        1
-    )
-    
     # Construct normally
     ws = WeightSetter(
         metagraph=mock_metagraph,
@@ -90,12 +77,6 @@ def weight_setter_large(
     monkeypatch.setattr(
         "qbittensor.utils.request.JWTManager.JWTManager.get_jwt",
         lambda self: fake_jwt
-    )
-    
-    # Patch DISTRIBUTION_KEY_UID to fit within mock metagraph size (10 hotkeys)
-    monkeypatch.setattr(
-        "qbittensor.validator.weights.WeightSetter.DISTRIBUTION_KEY_UID",
-        1
     )
     
     ws = WeightSetter(

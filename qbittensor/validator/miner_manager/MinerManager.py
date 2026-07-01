@@ -1,7 +1,6 @@
 import threading
 import bittensor as bt
 from datetime import timedelta
-import threading
 from typing import List
 from pydantic import BaseModel
 
@@ -45,9 +44,9 @@ class MinerManager:
         """Return all miners from the active_miners table"""
         with self.database_manager.lock:
             results = self.database_manager.query("SELECT hotkey, uid FROM active_miners")
-        if results == None:
+        if results is None:
             return set()
-        return set([Miner(hotkey=hotkey, uid=uid) for (hotkey, uid) in results]) # Format query results
+        return {Miner(hotkey=hotkey, uid=uid) for (hotkey, uid) in results}  # Format query results
     
     def _get_metagraph_miners(self) -> set[Miner]:
         """Get a list of all miners in the metagraph. Note that this will also include validators, but that's okay"""
