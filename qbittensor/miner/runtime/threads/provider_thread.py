@@ -155,5 +155,23 @@ def poll_once(registry) -> None:
                 update_status(registry, execution_id=execution_id, status=db_state)
             except Exception as e:
                 bt.logging.trace(f" Failed to update status for {execution_id}: {e}")
+        elif status.status == "UNKNOWN":
+            try:
+                provider_name = getattr(getattr(registry, "_default_device", None), "provider", None) if hasattr(registry, "_default_device") else None
+                persist_failed(
+                    registry,
+                    execution_id=tracked.execution_id,
+                    validator_hotkey=tracked.validator_hotkey,
+                    provider=provider_name,
+                    provider_job_id=getattr(tracked.handle, "provider_job_id", None),
+                    device_id=getattr(tracked.handle, "device_id", None),
+                    error_message="Provider lost track of job",
+                    metadata={"provider_status": status.status},
+                )
+            except Exception as e:
+                bt.logging.debug(f" Failed to persist UNKNOWN state for {execution_id}: {e}")
+            finally:
+                with registry._lock:
+                    registry._jobs.pop(execution_id, None)
 
 

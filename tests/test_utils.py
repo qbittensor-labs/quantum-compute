@@ -38,7 +38,7 @@ def get_mock_keypair() -> bt.Keypair:
 
 def get_mock_dendrite(keypair: bt.Keypair) -> bt.Dendrite:
     """Build and return a mock dendrite based on a keypair"""
-    return bt.dendrite(keypair)
+    return bt.Dendrite(wallet=keypair)
 
 def clean_up_validator_db():
     db_manager = DatabaseManager(VALIDATOR_TEST_DB_NAME)

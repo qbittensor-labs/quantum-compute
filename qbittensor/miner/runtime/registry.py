@@ -217,6 +217,20 @@ class JobRegistry:
         bt.logging.info(f" Successfully downloaded QASM for execution {execution_id}")
         if qasm is None:
             bt.logging.debug(f" Failed to download QASM for execution {execution_id}")
+            try:
+                from qbittensor.miner.runtime.repository import persist_failed
+                persist_failed(
+                    self,
+                    execution_id=execution_id,
+                    validator_hotkey=validator_hotkey,
+                    provider=None,
+                    provider_job_id=None,
+                    device_id=self.default_device_id,
+                    error_message="Failed to download QASM for prepare",
+                    metadata={"stage": "prepare"},
+                )
+            except Exception:
+                pass
             return
 
         try:
@@ -235,6 +249,20 @@ class JobRegistry:
                     context=None,
                 )
                 self._enqueue_error_event(event)
+            except Exception:
+                pass
+            try:
+                from qbittensor.miner.runtime.repository import persist_failed
+                persist_failed(
+                    self,
+                    execution_id=execution_id,
+                    validator_hotkey=validator_hotkey,
+                    provider=None,
+                    provider_job_id=None,
+                    device_id=self.default_device_id,
+                    error_message=str(e),
+                    metadata={"stage": "submit"},
+                )
             except Exception:
                 pass
             return
