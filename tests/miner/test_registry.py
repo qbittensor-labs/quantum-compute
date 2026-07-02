@@ -2,7 +2,8 @@ from datetime import timedelta
 from unittest.mock import patch
 import pytest
 import time
-from bittensor_wallet import Keypair
+# Keypair type comes via get_mock_keypair() which returns bt.Keypair
+# (no direct bittensor_wallet import needed)
 from qbittensor.utils.request.JWTManager import JWT
 from qbittensor.utils.timestamping import timestamp
 from tests.miner.constants import MINER_TEST_DB_NAME
@@ -28,7 +29,7 @@ def registry(monkeypatch) -> JobRegistry:
         "qbittensor.utils.request.JWTManager.JWTManager.get_jwt",
         lambda self: fake_jwt
     )
-    keypair: Keypair = get_mock_keypair()
+    keypair = get_mock_keypair()
     return JobRegistry(db=db, keypair=keypair, poll_interval_s=0.05)
 
 @pytest.fixture(scope="function", autouse=True)

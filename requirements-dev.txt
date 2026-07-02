@@ -1,0 +1,12 @@
+# Development and testing dependencies.
+# These are NOT installed for end users.
+# Install with: pip install -r requirements-dev.txt
+# Or together with runtime: pip install -r requirements.txt -r requirements-dev.txt
+
+pytest>=8.0
+pytest-cov>=4.0
+coverage>=7.0
+flake8>=7.0
+
+# Note: runtime deps are in requirements.txt
+# bittensor and friends should be installed from requirements.txt (or via pip install -e .)

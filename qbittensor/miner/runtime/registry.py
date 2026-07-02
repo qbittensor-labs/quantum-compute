@@ -5,7 +5,6 @@ from datetime import timedelta
 from typing import Dict, Optional
 import queue
 from typing import Dict, Optional, Callable
-from bittensor_wallet import Keypair
 from typing import Optional, Dict
 import requests
 import os
@@ -32,7 +31,7 @@ class JobRegistry:
     Provider thread: All provider calls (submit, poll, cancel, get_availability, get_pricing)
     Job server thread: All job endpoint communication
     """
-    def __init__(self, db: DatabaseManager, keypair: Keypair, poll_interval_s: float = 1.0, adapter: Optional[ProviderAdapter] = None) -> None:
+    def __init__(self, db: DatabaseManager, keypair: "bt.Keypair", poll_interval_s: float = 1.0, adapter: Optional[ProviderAdapter] = None) -> None:
         self.database_manager = db
         self.db = db
         self.keypair = keypair

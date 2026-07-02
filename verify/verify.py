@@ -1,6 +1,7 @@
 from binascii import unhexlify
 
-from substrateinterface import Keypair
+import bittensor as bt
+Keypair = bt.Keypair  # bt re-exports the Keypair (works for ss58 verification)
 
 
 def main(args):

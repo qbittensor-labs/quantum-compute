@@ -53,6 +53,14 @@ setup(
     license="MIT",
     python_requires=">=3.11",
     install_requires=requirements,
+    extras_require={
+        "dev": [
+            "pytest>=8.0",
+            "pytest-cov>=4.0",
+            "coverage>=7.0",
+            "flake8>=7.0",
+        ],
+    },
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
