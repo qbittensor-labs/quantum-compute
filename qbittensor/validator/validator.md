@@ -47,10 +47,9 @@ source venv/bin/activate
 
 ### 3. Install Bittensor
 
-Install the latest version of Bittensor:
+Install the latest version of Bittensor (includes btcli):
 ```bash
-pip install --upgrade bittensor
-pip install bittensor-cli # If you don't already have it
+pip install --upgrade "bittensor[cli]"
 ```
 
 ### 4. Register Your Wallet
@@ -69,12 +68,16 @@ git clone https://github.com/qbittensor-labs/quantum-compute.git
 cd quantum-compute
 ```
 
-### 6. Install Requirements
+### 6. Install the package
 
-Install all required dependencies:
 ```bash
-pip install -r requirements.txt
 pip install -e .
+```
+
+This will install the required version of `bittensor[cli]` plus the other direct dependencies.
+```bash
+# If you ever need torch support in addition:
+# pip install "bittensor[torch]"
 ```
 
 ### 7. Install PM2 (if not already installed)

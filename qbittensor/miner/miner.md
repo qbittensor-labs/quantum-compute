@@ -55,8 +55,7 @@ source venv/bin/activate
 ### 3. Install Bittensor
 
 ```bash
-pip install --upgrade bittensor
-pip install bittensor-cli
+pip install --upgrade "bittensor[cli]"
 ```
 
 ### 4. Register Your Wallet
