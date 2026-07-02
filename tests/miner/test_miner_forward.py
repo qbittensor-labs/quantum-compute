@@ -36,9 +36,9 @@ def mock_bittensor_components(monkeypatch):
     mock_axon.start = Mock()
     mock_axon.stop = Mock()
     
-    monkeypatch.setattr(bt, "wallet", Mock(return_value=mock_wallet))
-    monkeypatch.setattr(bt, "subtensor", Mock(return_value=mock_subtensor))
-    monkeypatch.setattr(bt, "axon", Mock(return_value=mock_axon))
+    monkeypatch.setattr(bt, "Wallet", Mock(return_value=mock_wallet))
+    monkeypatch.setattr(bt, "Subtensor", Mock(return_value=mock_subtensor))
+    monkeypatch.setattr(bt, "Axon", Mock(return_value=mock_axon))
     
     return mock_wallet, mock_subtensor, mock_metagraph, mock_axon
 

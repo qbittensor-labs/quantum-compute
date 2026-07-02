@@ -42,9 +42,9 @@ def test_miner_initializes_with_mock_components(monkeypatch):
         logging_dir="/tmp/test"
     )
     
-    monkeypatch.setattr(bt, "wallet", Mock(return_value=mock_wallet))
-    monkeypatch.setattr(bt, "subtensor", Mock(return_value=mock_subtensor))
-    monkeypatch.setattr(bt, "axon", Mock(return_value=mock_axon))
+    monkeypatch.setattr(bt, "Wallet", Mock(return_value=mock_wallet))
+    monkeypatch.setattr(bt, "Subtensor", Mock(return_value=mock_subtensor))
+    monkeypatch.setattr(bt, "Axon", Mock(return_value=mock_axon))
     monkeypatch.setattr(Miner, "config", Mock(return_value=mock_config))
     monkeypatch.setattr(Miner, "check_config", Mock())
     
@@ -86,9 +86,9 @@ def test_miner_sets_up_job_registry(monkeypatch):
     mock_config.blacklist = Mock(force_validator_permit=False, allow_non_registered=False)
     mock_config.logging = Mock(debug=False, logging_dir="/tmp")
     
-    monkeypatch.setattr(bt, "wallet", Mock(return_value=mock_wallet))
-    monkeypatch.setattr(bt, "subtensor", Mock(return_value=mock_subtensor))
-    monkeypatch.setattr(bt, "axon", Mock(return_value=Mock()))
+    monkeypatch.setattr(bt, "Wallet", Mock(return_value=mock_wallet))
+    monkeypatch.setattr(bt, "Subtensor", Mock(return_value=mock_subtensor))
+    monkeypatch.setattr(bt, "Axon", Mock(return_value=Mock()))
     monkeypatch.setattr(Miner, "config", Mock(return_value=mock_config))
     monkeypatch.setattr(Miner, "check_config", Mock())
     
@@ -123,9 +123,9 @@ def test_miner_initializes_budget_components(monkeypatch):
         logging=Mock(debug=False, logging_dir="/tmp")
     )
     
-    monkeypatch.setattr(bt, "wallet", Mock(return_value=mock_wallet))
-    monkeypatch.setattr(bt, "subtensor", Mock(return_value=mock_subtensor))
-    monkeypatch.setattr(bt, "axon", Mock(return_value=Mock()))
+    monkeypatch.setattr(bt, "Wallet", Mock(return_value=mock_wallet))
+    monkeypatch.setattr(bt, "Subtensor", Mock(return_value=mock_subtensor))
+    monkeypatch.setattr(bt, "Axon", Mock(return_value=Mock()))
     monkeypatch.setattr(Miner, "config", Mock(return_value=mock_config))
     monkeypatch.setattr(Miner, "check_config", Mock())
     
