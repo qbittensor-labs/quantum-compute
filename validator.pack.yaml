@@ -1,0 +1,150 @@
+schema_version: 1
+pack:
+  name: quantum-compute-validator
+  display_name: Quantum Compute Validator
+  subnet: quantum-compute
+  netuid: 48
+  role: validator
+  description: SN 48 validator. No GPU required. Pins Bittensor SDK v11.
+
+git:
+  url: https://github.com/qbittensor-labs/quantum-compute-staging.git
+  default_branch: main
+
+python:
+  requires: ">=3.12"
+  create_venv: true
+
+install_commands:
+  - ["{python}", "-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools"]
+  - ["{python}", "-m", "pip", "install", "-e", "{repo}"]
+
+upgrade_commands:
+  - ["git", "-C", "{repo}", "fetch", "--prune", "origin"]
+  - ["git", "-C", "{repo}", "pull", "--ff-only", "origin", "{branch}"]
+  - ["{python}", "-m", "pip", "install", "-e", "{repo}"]
+
+pre_stop_commands: []
+post_start_commands: []
+post_stop_commands: []
+
+entrypoint:
+  file: neurons/validator.py
+  extra_args: ["--logging.info"]
+
+version:
+  type: python_attr
+  module: qbittensor
+  attr: __version__
+
+arguments:
+  - name: netuid
+    flag: --netuid
+    required: true
+    type: int
+    default: 48
+    help: "Subnet netuid (Quantum Compute production is 48)"
+  - name: wallet.name
+    flag: --wallet.name
+    required: true
+    type: str
+    default: default
+  - name: wallet.hotkey
+    flag: --wallet.hotkey
+    required: true
+    type: str
+    default: default
+  - name: wallet.path
+    flag: --wallet.path
+    required: false
+    type: path
+    default: "~/.bittensor/wallets"
+  - name: neuron.data_dir
+    flag: --neuron.data_dir
+    required: true
+    type: path
+    default: "/var/lib/neuron-ops/{name}/data"
+  - name: neuron.axon_off
+    flag: --neuron.axon_off
+    required: false
+    type: switch
+    default: true
+    help: "Do not publish an axon. The validator address has no public ingress."
+  - name: axon.port
+    flag: --axon.port
+    required: false
+    type: int
+    default: 8091
+    help: "Unused while axon_off is set."
+  - name: axon.external_ip
+    flag: --axon.external_ip
+    required: false
+    type: str
+  - name: subtensor.network
+    flag: --subtensor.network
+    required: false
+    type: str
+    default: finney
+
+env:
+  - name: DATA_DIR
+    required: false
+    help: "Set automatically from --neuron.data_dir"
+  - name: JOB_API_URL
+    required: false
+    default: https://jobs.openquantum.com
+  - name: TENSORAUTH_URL
+    required: false
+    default: https://tensorauth.openquantum.com
+  - name: TELEMETRY_API_URL
+    required: false
+    default: https://telemetry.openquantum.com
+  - name: PUBLIC_BACKEND_CLASSES
+    required: false
+    help: "Optional allowlist of catalog short_codes (comma-separated)"
+  - name: WEIGHT_MIN_MINER_STAKE_ALPHA
+    required: false
+    default: "5000"
+    help: "Alpha stake floor for new public jobs. Local soak should set 0."
+  - name: DISPATCH_STAKE_EXPONENT
+    required: false
+    default: "1"
+    help: "Dispatch lottery exponent. 1 weights by stake. Does not affect weights."
+  - name: VALIDATOR_RECEIPT_WEIGHTS
+    required: false
+    help: "Off in production until receipt overlap is confirmed. When true, no maintenance drip."
+  - name: NETUID
+    required: false
+    help: "JWT subnet; defaults to 48. Must match --netuid on localnet."
+
+health:
+  process_alive: true
+
+preflight:
+  - type: python_version
+    requires: ">=3.12"
+  - type: bin_exists
+    bin: git
+  - type: disk_free
+    path: "{data_dir}"
+    min_gb: 10
+
+update:
+  schedule: 1h
+  strategy: branch
+  auto_update: true
+  allow_dirty: false
+  upgrade_healthy_seconds: 60
+
+restart:
+  max_restarts: 5
+  window_seconds: 600
+  stop_timeout_seconds: 60
+  ready_grace_seconds: 120
+
+data:
+  sacred_paths: ["{data_dir}"]
+  default_data_dir: "/var/lib/neuron-ops/{name}/data"
+  pass_as:
+    flag: --neuron.data_dir
+    env: DATA_DIR

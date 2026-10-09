@@ -1,28 +1,31 @@
+# The MIT License (MIT)
+# Copyright © 2023 Yuma Rao
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 import random
 import bittensor as bt
 import numpy as np
 from typing import List
 
 
-def check_uid_availability(
-    metagraph: "bt.Metagraph", uid: int, vpermit_tao_limit: int
-) -> bool:
-    """Check if uid is available. The UID should be available if it is serving and has less than vpermit_tao_limit stake
-    Args:
-        metagraph (:obj: bt.Metagraph): Metagraph object
-        uid (int): uid to be checked
-        vpermit_tao_limit (int): Validator permit tao limit
-    Returns:
-        bool: True if uid is available, False otherwise
-    """
-    # Filter non serving axons.
+def check_uid_availability(metagraph: "bt.Metagraph", uid: int) -> bool:
+    """True when the axon is serving. Permit and stake do not exclude a uid."""
     if not metagraph.axons[uid].is_serving:
         return False
-    # Filter validator permit > 1024 stake.
-    if metagraph.validator_permit[uid]:
-        if metagraph.S[uid] > vpermit_tao_limit:
-            return False
-    # Available otherwise.
     return True
 
 
@@ -40,9 +43,7 @@ def get_random_uids(self, k: int, exclude: List[int] = None) -> np.ndarray:
     avail_uids = []
 
     for uid in range(self.metagraph.n.item()):
-        uid_is_available = check_uid_availability(
-            self.metagraph, uid, self.config.neuron.vpermit_tao_limit
-        )
+        uid_is_available = check_uid_availability(self.metagraph, uid)
         uid_is_not_excluded = exclude is None or uid not in exclude
 
         if uid_is_available:
@@ -60,3 +61,28 @@ def get_random_uids(self, k: int, exclude: List[int] = None) -> np.ndarray:
         )
     uids = np.array(random.sample(available_uids, k))
     return uids
+
+
+def is_valid_miner_axon(axon: "bt.AxonInfo") -> bool:
+    """
+    Returns True only for axons we should actually attempt to connect to.
+
+    Rejects:
+    - Axons that are not currently serving
+    - 0.0.0.0 (and empty) IPs — these are placeholders and will never succeed
+    - port 0 or None (unannounced)
+    """
+    if axon is None:
+        return False
+    if not getattr(axon, "is_serving", False):
+        return False
+
+    ip = (getattr(axon, "ip", "") or "").strip()
+    if ip in ("0.0.0.0", "0.0.0.0.0", "", "0.0.0"):
+        return False
+
+    port = getattr(axon, "port", 0)
+    if not port or port == 0:
+        return False
+
+    return True

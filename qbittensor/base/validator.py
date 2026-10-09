@@ -1,24 +1,23 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
-
+# Copyright © 2026 qBitTensor Labs
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
 # the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
 # and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
+#
 # The above copyright notice and this permission notice shall be included in all copies or substantial portions of
 # the Software.
-
+#
 # THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
 # THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 # THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-
 import copy
+import time
 import numpy as np
 import asyncio
 import argparse
@@ -32,9 +31,12 @@ from qbittensor.base.neuron import BaseNeuron
 from qbittensor.base.utils.weight_utils import (
     process_weights_for_netuid,
     convert_weights_and_uids_for_emit,
-)  # TODO: Replace when bittensor switches to numpy
+)
 from qbittensor.mock import MockDendrite
 from qbittensor.utils.config import add_validator_args
+
+# One sweep, one class-claim, and metagraph sync. Same period for every validator.
+_FORWARD_PERIOD_S = 30.0
 
 
 class BaseValidatorNeuron(BaseNeuron):
@@ -75,9 +77,6 @@ class BaseValidatorNeuron(BaseNeuron):
         else:
             bt.logging.warning("axon off, not serving ip to chain.")
 
-        # Create asyncio event loop to manage async tasks.
-        self.loop = asyncio.get_event_loop()
-
         # Instantiate runners
         self.should_exit: bool = False
         self.is_running: bool = False
@@ -92,29 +91,24 @@ class BaseValidatorNeuron(BaseNeuron):
             self.axon = bt.Axon(wallet=self.wallet, config=self.config)
 
             try:
-                self.subtensor.serve_axon(
-                    netuid=self.config.netuid,
-                    axon=self.axon,
-                )
+                # v11: publish endpoint via ServeAxon intent (no Axon object on chain API).
+                self.axon.serve(netuid=self.config.netuid, subtensor=self.subtensor)
+                from qbittensor.base.neuron import _endpoint_label
+
                 bt.logging.info(
-                    f"Running validator {self.axon} on network: {self.config.subtensor.chain_endpoint} with netuid: {self.config.netuid}"
+                    f"Running validator {self.axon} on network: "
+                    f"{_endpoint_label(self.subtensor, self.config)} with netuid: {self.config.netuid}"
                 )
             except Exception as e:
-                bt.logging.error(f"Failed to serve Axon with exception: {e}")
-                pass
+                bt.logging.warning(
+                    f"ServeAxon skipped ({e}). Validators do not need a reachable "
+                    "axon; miners still must publish --axon.external_ip."
+                )
 
         except Exception as e:
             bt.logging.error(
                 f"Failed to create Axon initialize with exception: {e}"
             )
-            pass
-
-    async def concurrent_forward(self):
-        coroutines = [
-            self.forward()
-            for _ in range(self.config.neuron.num_concurrent_forwards)
-        ]
-        await asyncio.gather(*coroutines)
 
     def run(self):
         """
@@ -143,46 +137,63 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # This loop maintains the validator's operations until intentionally stopped.
         try:
-            while True:
-                bt.logging.info(f"step({self.step}) block({self.block})")
+            while not self.should_exit:
+                try:
+                    bt.logging.info(f"step({self.step}) block({self.block})")
+                    started = time.monotonic()
 
-                # Run multiple forwards concurrently.
-                self.loop.run_until_complete(self.concurrent_forward())
+                    # Run single forward.
+                    self.forward()
 
-                # Check if we should exit.
-                if self.should_exit:
-                    break
+                    # Check if we should exit.
+                    if self.should_exit:
+                        break
 
-                # Sync metagraph and potentially set weights.
-                self.sync()
+                    # Sync metagraph and potentially set weights.
+                    self.sync()
 
-                self.step += 1
+                    remaining = _FORWARD_PERIOD_S - (time.monotonic() - started)
+                    slept = 0.0
+                    while slept < remaining and not self.should_exit:
+                        time.sleep(min(1.0, remaining - slept))
+                        slept += 1.0
+                    if self.should_exit:
+                        break
 
-        # If someone intentionally stops the validator, it'll safely terminate operations.
+                    self.step += 1
+                except Exception as err:
+                    if self.should_exit:
+                        break
+                    bt.logging.error(f"Error during validation step {self.step}: {str(err)}")
+                    bt.logging.debug(
+                        str(print_exception(type(err), err, err.__traceback__))
+                    )
+                    # Continue the loop after transient errors (e.g. handshake timeout)
+                    time.sleep(5)
+
         except KeyboardInterrupt:
-            self.axon.stop()
-            bt.logging.success("Validator killed by keyboard interrupt.")
-            exit()
-
-        # In case of unforeseen errors, the validator will log the error and continue operations.
-        except Exception as err:
-            bt.logging.error(f"Error during validation: {str(err)}")
-            bt.logging.debug(
-                str(print_exception(type(err), err, err.__traceback__))
-            )
+            self.should_exit = True
+            bt.logging.success("Validator stopped by keyboard interrupt.")
+        finally:
+            axon = getattr(self, "axon", None)
+            if axon is not None:
+                try:
+                    axon.stop()
+                except Exception:
+                    bt.logging.debug("axon stop failed during shutdown")
 
     def run_in_background_thread(self):
         """
         Starts the validator's operations in a background thread upon entering the context.
         This method facilitates the use of the validator in a 'with' statement.
         """
-        if not self.is_running:
-            bt.logging.debug("Starting validator in background thread.")
-            self.should_exit = False
-            self.thread = threading.Thread(target=self.run,)
-            self.thread.start()
-            self.is_running = True
-            bt.logging.debug("Started")
+        if self.is_running or self.should_exit:
+            return
+        bt.logging.debug("Starting validator in background thread.")
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
+        self.is_running = True
+        bt.logging.debug("Started")
 
     def stop_run_thread(self):
         """
@@ -227,7 +238,7 @@ class BaseValidatorNeuron(BaseNeuron):
         # Check if self.scores contains any NaN values and log a warning if it does.
         if np.isnan(self.scores).any():
             bt.logging.warning(
-                f"Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
+                "Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
             )
 
         # Calculate the average reward for each uid across non-zero values.
@@ -268,64 +279,79 @@ class BaseValidatorNeuron(BaseNeuron):
         bt.logging.debug("uint_weights", uint_weights)
         bt.logging.debug("uint_uids", uint_uids)
 
-        # Set the weights on chain via our subtensor connection.
-        # v10 returns ExtrinsicResponse (has .success / .message); support old tuple for compat.
-        result = self.subtensor.set_weights(
-            wallet=self.wallet,
-            netuid=self.config.netuid,
-            uids=uint_uids,
-            weights=uint_weights,
-            wait_for_finalization=False,
-            wait_for_inclusion=False,
-            version_key=self.spec_version,
-        )
-        if hasattr(result, "success"):
-            success = bool(result.success)
-            msg = getattr(result, "message", "") or getattr(result, "error_message", "")
-        elif isinstance(result, (list, tuple)):
-            success = bool(result[0]) if result else False
-            msg = result[1] if len(result) > 1 else ""
-        else:
-            success = bool(result)
-            msg = ""
-        if success:
-            bt.logging.info("set_weights on chain successfully!")
-        else:
-            bt.logging.error("set_weights failed", msg)
+        # Set the weights on chain via v11 SetWeights intent.
+        # Pass float proportions (SDK normalizes / quantizes); version_key is the
+        # subnet spec version so we remain compatible with on-chain checks.
+        try:
+            weight_map = {int(u): float(w) for u, w in zip(uint_uids, uint_weights)}
+            intent = bt.SetWeights(
+                netuid=self.config.netuid,
+                weights=weight_map,
+                version_key=self.spec_version,
+            )
+            result = self.subtensor.execute(
+                intent,
+                self.wallet,
+                wait_for_inclusion=False,
+                wait_for_finalization=False,
+            )
+            if getattr(result, "success", False):
+                bt.logging.info("set_weights on chain successfully!")
+                # execute() does not wait for inclusion. Stamp last_update
+                # locally or the next loop submits again.
+                self._mark_local_weights_submitted()
+            else:
+                err = getattr(result, "error", None)
+                msg = getattr(err, "remediation", None) or getattr(result, "message", result)
+                bt.logging.error("set_weights failed", msg)
+        except Exception as exc:
+            bt.logging.error(f"set_weights failed: {exc}", exc_info=True)
+
+    def _mark_local_weights_submitted(self) -> None:
+        """Pretend last_update is now so should_set_weights() stays false until epoch_length."""
+        try:
+            uid = int(self.uid)
+            last_update = getattr(self.metagraph, "last_update", None)
+            if last_update is None:
+                return
+            last_update[uid] = int(self.block)
+        except Exception as exc:
+            bt.logging.debug(f"Could not stamp local last_update after set_weights: {exc}")
 
     def resync_metagraph(self):
         """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
         bt.logging.info("resync_metagraph()")
 
-        # Copies state of metagraph before syncing.
-        previous_metagraph = copy.deepcopy(self.metagraph)
+        # Snapshot only the fields we need — MetagraphAdapter holds a live Subtensor
+        # client that is not deepcopy/pickle-safe under SDK v11.
+        previous_axons = list(self.metagraph.axons)
+        previous_hotkeys = list(self.metagraph.hotkeys)
 
         # Sync the metagraph.
         self.metagraph.sync(subtensor=self.subtensor)
 
         # Check if the metagraph axon info has changed.
-        if previous_metagraph.axons == self.metagraph.axons:
+        if previous_axons == list(self.metagraph.axons):
             return
 
         bt.logging.info(
             "Metagraph updated, re-syncing hotkeys, dendrite pool and moving averages"
         )
-        # Zero out all hotkeys that have been replaced.
-        for uid, hotkey in enumerate(self.hotkeys):
-            if hotkey != self.metagraph.hotkeys[uid]:
-                self.scores[uid] = 0  # hotkey has been replaced
+        # Zero out all hotkeys that have been replaced within overlapping range.
+        overlap = min(len(previous_hotkeys), len(self.metagraph.hotkeys))
+        for uid in range(overlap):
+            if previous_hotkeys[uid] != self.metagraph.hotkeys[uid]:
+                self.scores[uid] = 0
 
-        # Check to see if the metagraph has changed size.
-        # If so, we need to add new hotkeys and moving averages.
-        if len(self.hotkeys) < len(self.metagraph.hotkeys):
-            # Update the size of the moving average scores.
-            new_moving_average = np.zeros((self.metagraph.n))
-            min_len = min(len(self.hotkeys), len(self.scores))
-            new_moving_average[:min_len] = self.scores[:min_len]
-            self.scores = new_moving_average
+        # Resize scores to match current metagraph size (handle growth and shrink).
+        if len(self.scores) != int(self.metagraph.n):
+            new_scores = np.zeros((self.metagraph.n), dtype=self.scores.dtype)
+            copy_len = min(len(self.scores), int(self.metagraph.n))
+            new_scores[:copy_len] = self.scores[:copy_len]
+            self.scores = new_scores
 
         # Update the hotkeys.
-        self.hotkeys = copy.deepcopy(self.metagraph.hotkeys)
+        self.hotkeys = list(self.metagraph.hotkeys)
 
     def update_scores(self, rewards: np.ndarray, uids: List[int]):
         """Performs exponential moving average on the scores based on the rewards received from the miners."""

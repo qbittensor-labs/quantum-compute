@@ -1,10 +1,36 @@
+# The MIT License (MIT)
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 from __future__ import annotations
 
 import time
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 
-from .base import ProviderAdapter, Device, Capability, JobHandle, BaseExecutionStatus, JobReceipt, AvailabilityStatus
+from .base import (
+    ProviderAdapter,
+    Device,
+    Capability,
+    JobHandle,
+    BaseExecutionStatus,
+    JobReceipt,
+    AvailabilityStatus,
+    list_public_classes_from_env,
+)
 
 
 class _InMemoryJob(BaseModel):
@@ -41,14 +67,25 @@ class MockProviderAdapter(ProviderAdapter):
     def list_devices(self) -> List[Device]:
         return list(self._devices)
 
-    def submit(self, circuit_data: str, device_id: Optional[str] = None, shots: Optional[int] = None) -> JobHandle:
+    def submit(
+        self,
+        circuit_data: str,
+        device_id: Optional[str] = None,
+        shots: Optional[int] = None,
+        configuration_data: Optional[dict] = None,
+    ) -> JobHandle:
         target = device_id or self._devices[0].device_id
         execution_id = f"job_{self._id_counter}"
         self._id_counter += 1
         now = time.time()
         duration_s = max(1.0, min(5.0, len(circuit_data) / 1000.0))
         self._jobs[execution_id] = _InMemoryJob(
-            execution_id=execution_id, device_id=target, submitted_at=now, duration_s=duration_s, status="QUEUED"
+            execution_id=execution_id,
+            device_id=target,
+            submitted_at=now,
+            duration_s=duration_s,
+            status="QUEUED",
+            shots=shots,
         )
         return JobHandle(provider_job_id=execution_id, device_id=target)
 
@@ -88,7 +125,7 @@ class MockProviderAdapter(ProviderAdapter):
             status=status,
             device_id=device_id,
             cost=cost,
-            shots=job.shots if job and job.shots is not None else 1000,
+            shots=job.shots if job else None,
             timestamps={
                 "createdAt": job.submitted_at if job else None,
                 "endedAt": (job.submitted_at + job.duration_s) if job and job.status == "COMPLETED" else None,
@@ -114,4 +151,5 @@ class MockProviderAdapter(ProviderAdapter):
     def get_pricing(self, device_id: Optional[str] = None) -> Optional[Dict[str, float]]:
         return {"perTask": 0.03, "perShot": 0.001, "perMinute": 0.08}
 
-
+    def list_public_classes(self) -> List[str]:
+        return list_public_classes_from_env()

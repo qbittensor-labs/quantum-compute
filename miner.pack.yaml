@@ -1,0 +1,179 @@
+schema_version: 1
+pack:
+  name: quantum-compute-openquantum-miner
+  display_name: Quantum Compute Open Quantum Miner
+  subnet: quantum-compute
+  netuid: 48
+  role: miner
+  description: SN48 miner. Runs circuits received from validators.
+
+git:
+  url: https://github.com/qbittensor-labs/quantum-compute-staging.git
+  default_branch: main
+
+python:
+  requires: ">=3.12"
+  create_venv: true
+
+install_commands:
+- [ "{python}", "-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools" ]
+- [ "{python}", "-m", "pip", "install", "-e", "{repo}" ]
+
+upgrade_commands:
+- [ "git", "-C", "{repo}", "fetch", "--prune", "origin" ]
+- [ "git", "-C", "{repo}", "pull", "--ff-only", "origin", "{branch}" ]
+- [ "{python}", "-m", "pip", "install", "-e", "{repo}" ]
+
+pre_stop_commands: []
+post_start_commands: []
+post_stop_commands: []
+
+entrypoint:
+  file: neurons/miner.py
+  extra_args: [ "--logging.info" ]
+
+version:
+  type: python_attr
+  module: qbittensor
+  attr: __version__
+
+arguments:
+- name: netuid
+  flag: --netuid
+  required: true
+  type: int
+  default: 48
+- name: wallet.name
+  flag: --wallet.name
+  required: true
+  type: str
+  default: default
+- name: wallet.hotkey
+  flag: --wallet.hotkey
+  required: true
+  type: str
+  default: default
+- name: wallet.path
+  flag: --wallet.path
+  required: false
+  type: path
+  default: "~/.bittensor/wallets"
+- name: neuron.data_dir
+  flag: --neuron.data_dir
+  required: true
+  type: path
+  default: "/var/lib/neuron-ops/{name}/data"
+- name: axon.port
+  flag: --axon.port
+  required: true
+  type: int
+  default: 8091
+- name: axon.ip
+  flag: --axon.ip
+  required: true
+  type: str
+  help: "Private address this miner binds. One port is shared only when each miner binds a different address."
+- name: axon.external_ip
+  flag: --axon.external_ip
+  required: true
+  type: str
+  help: "Public address validators dial. Required for ServeAxon."
+- name: subtensor.network
+  flag: --subtensor.network
+  required: false
+  type: str
+  default: finney
+
+env:
+- name: PROVIDER
+  required: true
+  default: openquantum
+  help: "Must be openquantum for this pack."
+- name: OPENQUANTUM_CLIENT_ID
+  required: true
+  help: "SDK key id. The miner exchanges it for a short-lived access token."
+- name: OPENQUANTUM_CLIENT_SECRET
+  required: true
+  secret: true
+  help: "SDK key secret. Stored for the miner; not printed by neuron-ops."
+- name: OPENQUANTUM_ORGANIZATION_ID
+  required: true
+  help: "Organization UUID that pays for jobs."
+- name: OPENQUANTUM_ACCESS_TOKEN
+  required: false
+  secret: true
+  help: "Optional static JWT. When unset, the SDK key is used."
+- name: PUBLIC_BACKEND_CLASSES
+  required: true
+  help: "Classes this miner accepts. Empty means no jobs are placed."
+- name: OPENQUANTUM_MIN_CREDITS
+  required: false
+  default: "50"
+  help: "Stop accepting jobs when the balance falls below this."
+- name: OPENQUANTUM_DRY_RUN
+  required: false
+  default: "0"
+  help: "Set to 1 to simulate jobs locally."
+- name: OPENQUANTUM_SCHEDULER_URL
+  required: false
+  default: https://scheduler.openquantum.com
+- name: OPENQUANTUM_MANAGEMENT_URL
+  required: false
+  default: https://management.openquantum.com
+- name: DATA_DIR
+  required: false
+- name: MINER_MAX_INFLIGHT
+  required: false
+- name: JOB_API_URL
+  required: false
+  default: https://jobs.openquantum.com
+- name: TENSORAUTH_URL
+  required: false
+  default: https://tensorauth.openquantum.com
+- name: TELEMETRY_API_URL
+  required: false
+  default: https://telemetry.openquantum.com
+- name: BT_WALLET_PASSWORD
+  required: false
+  secret: true
+  help: "Set when the wallet is encrypted."
+
+health:
+  process_alive: true
+  tcp:
+    port_from: axon.port
+
+preflight:
+- type: python_version
+  requires: ">=3.12"
+- type: bin_exists
+  bin: git
+- type: disk_free
+  path: "{data_dir}"
+  min_gb: 20
+- type: port_free
+  from: axon.port
+- type: env_not
+  name: PROVIDER
+  values: [ "mock", "" ]
+  help: "Refuse PROVIDER=mock"
+
+update:
+  schedule: 1h
+  strategy: branch
+  auto_update: true
+  allow_dirty: false
+  upgrade_healthy_seconds: 60
+
+restart:
+  max_restarts: 5
+  window_seconds: 600
+  stop_timeout_seconds: 30
+  ready_grace_seconds: 120
+
+data:
+  sacred_paths: [ "{data_dir}" ]
+  default_data_dir: "/var/lib/neuron-ops/{name}/data"
+  pass_as:
+    flag: --neuron.data_dir
+    env: DATA_DIR
