@@ -1,6 +1,25 @@
+# The MIT License (MIT)
+# Copyright © 2023 Yuma Rao
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 import numpy as np
 from typing import Tuple, List, Union, Any
 import bittensor
+from qbittensor import bt_compat  # noqa: F401 — installs bittensor.logging shim
 from numpy import ndarray, dtype, floating, complexfloating
 
 U32_MAX = 4294967295
@@ -124,6 +143,24 @@ def convert_weights_and_uids_for_emit(
         if uint16_val != 0:  # Filter zeros
             weight_vals.append(uint16_val)
             weight_uids.append(uid_i)
+
+    # Guarantee the emitted raw weights sum to at most U16_MAX (65535).
+    # The max-upscale + round path above can produce sums like 65537 when a
+    # near-1.0 treasury weight coexists with tiny dust weights (e.g. 65535 + 2).
+    # We correct by shaving the excess off the single largest entry. This
+    # preserves all dust weights (critical for keep-alive of maintenance miners)
+    # while only affecting the dominant treasury allocation by a negligible amount.
+    if weight_vals:
+        total = sum(weight_vals)
+        if total > U16_MAX:
+            excess = total - U16_MAX
+            max_idx = int(np.argmax(weight_vals))
+            weight_vals[max_idx] = max(0, weight_vals[max_idx] - excess)
+            bittensor.logging.debug(
+                f"Adjusted uint weights down by {excess} to respect U16_MAX; "
+                f"new total={sum(weight_vals)}"
+            )
+
     bittensor.logging.debug(f"final params: {weight_uids} : {weight_vals}")
     return weight_uids, weight_vals
 
@@ -132,7 +169,7 @@ def process_weights_for_netuid(
     uids,
     weights: np.ndarray,
     netuid: int,
-    subtensor: "bittensor.subtensor",
+    subtensor: "bittensor.Subtensor",
     metagraph: "bittensor.metagraph" = None,
     exclude_quantile: int = 0,
 ) -> Union[
@@ -157,7 +194,10 @@ def process_weights_for_netuid(
 
     # Get latest metagraph from chain if metagraph is None.
     if metagraph is None:
-        metagraph = subtensor.metagraph(netuid, mechid=0)
+        from qbittensor.bt_compat import MetagraphAdapter
+
+        mg = subtensor.subnets.metagraph(netuid=netuid)
+        metagraph = MetagraphAdapter(mg, netuid=netuid, subtensor=subtensor)
 
     # Cast weights to floats.
     if not isinstance(weights, np.ndarray) or weights.dtype != np.float32:
@@ -166,8 +206,8 @@ def process_weights_for_netuid(
     # Network configuration parameters from subtensor.
     # These parameters determine the range of acceptable weights for each neuron.
     quantile = exclude_quantile / U16_MAX
-    min_allowed_weights = subtensor.min_allowed_weights(netuid=netuid)
-    max_weight_limit = subtensor.max_weight_limit(netuid=netuid)
+    min_allowed_weights = subtensor.hyperparameters.min_allowed_weights(netuid=netuid)
+    max_weight_limit = subtensor.hyperparameters.max_weight_limit(netuid=netuid)
     bittensor.logging.debug("quantile", quantile)
     bittensor.logging.debug("min_allowed_weights", min_allowed_weights)
     bittensor.logging.debug("max_weight_limit", max_weight_limit)
@@ -177,9 +217,10 @@ def process_weights_for_netuid(
     non_zero_weight_idx = np.atleast_1d(non_zero_weight_idx)
     non_zero_weight_uids = uids[non_zero_weight_idx]
     non_zero_weights = weights[non_zero_weight_idx]
-    if non_zero_weights.size == 0 or metagraph.n < min_allowed_weights:
+    metagraph_n = int(metagraph.n)
+    if non_zero_weights.size == 0 or metagraph_n < min_allowed_weights:
         bittensor.logging.warning("No non-zero weights returning all ones.")
-        final_weights = np.ones(metagraph.n) / metagraph.n
+        final_weights = np.ones(metagraph_n) / metagraph_n
         bittensor.logging.debug("final_weights", final_weights)
         return np.arange(len(final_weights)), final_weights
 
@@ -188,7 +229,7 @@ def process_weights_for_netuid(
             "No non-zero weights less then min allowed weight, returning all ones."
         )
         weights = (
-            np.ones(metagraph.n) * 1e-5
+            np.ones(metagraph_n) * 1e-5
         )  # creating minimum even non-zero weights
         weights[non_zero_weight_idx] += non_zero_weights
         bittensor.logging.debug("final_weights", weights)

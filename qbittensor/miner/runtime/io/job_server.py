@@ -1,3 +1,20 @@
+# The MIT License (MIT)
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 import bittensor as bt
 from typing import Any, Dict, Optional
 from qbittensor.miner.runtime.types import (
@@ -5,25 +22,23 @@ from qbittensor.miner.runtime.types import (
     MinerStatus as _MinerStatus,
 )
 
+
 def _build_availability_fields(availability, *, pending_count: int, provider_queue: Optional[int]) -> tuple[bool, int]:
 
     accepting_jobs = True
     queue_depth: int = 0
-    
+
     if availability is not None:
         if getattr(availability, "pending_jobs", None) is not None:
             try:
                 queue_depth += int(getattr(availability, "pending_jobs", 0) or 0)
             except Exception:
                 pass
-            
-        elif isinstance(getattr(availability, "availability", None), str):
-            is_available = availability.availability.upper() == "ONLINE"
 
         next_available = getattr(availability, "next_available", None)
         if next_available is not None:
             next_available = str(next_available)
-            
+
     try:
         queue_depth += int(pending_count or 0)
     except Exception:
@@ -59,7 +74,15 @@ def _build_metadata(identity, availability, caps, registry) -> Dict[str, Any]:
             metadata["pending"] = getattr(availability, "pending_jobs", None)
             metadata["availability"] = getattr(availability, "availability", None)
             metadata["status_msg"] = getattr(availability, "status_msg", None)
-            if getattr(availability, "is_available", None) is False and isinstance(getattr(availability, "status_msg", None), str) and "local_queue_full" in availability.status_msg:
+            if getattr(
+                availability,
+                "is_available",
+                None) is False and isinstance(
+                getattr(
+                    availability,
+                    "status_msg",
+                    None),
+                    str) and "local_queue_full" in availability.status_msg:
                 try:
                     metadata["local_inflight"] = registry.get_inflight_count()
                     metadata["max_inflight"] = getattr(registry, "_max_inflight", None)
@@ -75,24 +98,8 @@ def _build_metadata(identity, availability, caps, registry) -> Dict[str, Any]:
     return metadata
 
 
-def _send_backend_patch(registry, payload: Dict[str, Any]) -> None:
-    try:
-        accepting = payload.get("accepting_jobs")
-        qdepth = payload.get("queue_depth")
-        status = payload.get("status")
-        try:
-            hotkey = getattr(getattr(registry, "_request_manager", None), "_keypair", None)
-            hotkey = getattr(hotkey, "ss58_address", None)
-        except Exception:
-            hotkey = None
-        bt.logging.debug(f"[job_server] PATCH /backends sending (accepting_jobs={accepting}, queue_depth={qdepth}, status={status}, hotkey={hotkey})")
-    except Exception:
-        pass
-    registry._request_manager.patch(endpoint="backends", json=payload)
-
-
 def send_status_to_job_server(registry, status_data: dict) -> None:
-    """Send availability/pricing to platform via PATCH /v{API_VERSION}/backends."""
+    """Keep local availability cache. Miners do not PATCH /backends."""
     try:
         try:
             bt.logging.debug("[job_server] Preparing backend status payload from collected provider data")
@@ -104,11 +111,14 @@ def send_status_to_job_server(registry, status_data: dict) -> None:
         caps = status_data.get("capabilities")
 
         pending_count = int(status_data.get("_pending_count") or 0)
-        inflight_count = int(status_data.get("_inflight_count") or 0)
         provider_queue = getattr(availability, "pending_jobs", None) if availability is not None else None
-        accepting_jobs, queue_depth = _build_availability_fields(availability, pending_count=pending_count, provider_queue=provider_queue)
-        snake_price = _build_pricing_fields(pricing)
+        accepting_jobs, queue_depth = _build_availability_fields(
+            availability, pending_count=pending_count, provider_queue=provider_queue)
         metadata = _build_metadata(identity, availability, caps, registry)
+        # Attach normalized pricing when present (fields are optional on the backend).
+        snake_price = _build_pricing_fields(pricing)
+        if any(v is not None for v in snake_price.values()):
+            metadata["pricing"] = snake_price
 
         status_enum = _MinerStatus.ONLINE
         try:
@@ -125,6 +135,18 @@ def send_status_to_job_server(registry, status_data: dict) -> None:
             status_enum = _MinerStatus.ONLINE
 
         accepting_jobs = (pending_count < getattr(registry, "_max_inflight", 1000))
+        if availability is not None and getattr(availability, "is_available", None) is False:
+            accepting_jobs = False
+        override = getattr(getattr(registry, "adapter", None), "get_accepting_jobs_override", None)
+        if callable(override):
+            try:
+                forced = override()
+            except Exception:
+                forced = None
+            if forced is False:
+                accepting_jobs = False
+            elif forced is True and availability is not None:
+                accepting_jobs = True and (pending_count < getattr(registry, "_max_inflight", 1000))
         payload_model = _PatchBackendRequestModel(
             accepting_jobs=accepting_jobs,
             status=status_enum,
@@ -132,23 +154,19 @@ def send_status_to_job_server(registry, status_data: dict) -> None:
             metadata=metadata,
         )
         try:
-            bt.logging.info(f"[job_server] Backend status ready (accepting_jobs={accepting_jobs}, queue_depth={queue_depth}, status={status_enum})")
+            bt.logging.debug(
+                f"[job_server] Local status (accepting_jobs={accepting_jobs}, queue_depth={queue_depth}, status={status_enum}); not PATCHing jobs"
+            )
         except Exception:
             pass
-        _send_backend_patch(registry, payload_model.model_dump(mode='json'))
+        try:
+            registry._availability_cache = availability
+        except Exception:
+            pass
     except Exception as e:
-        bt.logging.trace(f" Failed to send status to job server: {e}")
+        bt.logging.trace(f" Failed to apply local status: {e}")
 
 
 def send_error_to_job_server(registry, error_data: dict) -> None:
-    """Report execution status via PATCH /v{API_VERSION}/executions/:execution_id."""
-    try:
-        execution_id = error_data.get("job_id") or error_data.get("execution_id")
-        message = error_data.get("error") or error_data.get("message") or ""
-        
-        if execution_id:
-            registry._request_manager.patch(endpoint=f"executions/{execution_id}", json={"status": "Failed", "message": message})
-    except Exception as e:
-        bt.logging.trace(f"[job_server_ops] Failed to send error to job server: {e}")
-
-
+    """Errors stay local. Miners do not PATCH /executions/:id (validator reports via synapse)."""
+    return

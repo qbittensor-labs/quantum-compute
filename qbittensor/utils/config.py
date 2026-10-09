@@ -1,15 +1,15 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# Copyright © 2023 Opentensor Foundation
-
+# Copyright © 2026 qBitTensor Labs
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
 # the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
 # and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
+#
 # The above copyright notice and this permission notice shall be included in all copies or substantial portions of
 # the Software.
-
+#
 # THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
 # THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 # THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
@@ -20,6 +20,10 @@ import os
 import subprocess
 import argparse
 import bittensor as bt
+
+# Ensure v11 shims (logging/Config/add_args) are installed before use.
+from qbittensor import bt_compat  # noqa: F401
+from qbittensor.bt_compat import config_from_parser
 from .logging import setup_events_logger
 
 
@@ -58,6 +62,15 @@ def check_config(cls, config: "bt.Config"):
     config.neuron.full_path = os.path.expanduser(full_path)
     if not os.path.exists(config.neuron.full_path):
         os.makedirs(config.neuron.full_path, exist_ok=True)
+
+    # Ensure the configurable data dir (for DBs) exists and propagate to env
+    # so DatabaseManager and other components pick up the same location reliably.
+    data_dir = getattr(config.neuron, "data_dir", os.environ.get("DATA_DIR", "data"))
+    data_dir = os.path.expanduser(data_dir)
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir, exist_ok=True)
+    os.environ["DATA_DIR"] = data_dir
+    # Note: quantum uses its own data layout (no automatic 'solutions' subdir)
 
     if not config.neuron.dont_save_events:
         # Add custom event logger for the events.
@@ -156,6 +169,13 @@ def add_miner_args(cls, parser):
     )
 
     parser.add_argument(
+        "--neuron.data_dir",
+        type=str,
+        help="Base directory for databases. Can also be set via DATA_DIR env var.",
+        default=os.environ.get("DATA_DIR", "data"),
+    )
+
+    parser.add_argument(
         "--wandb.project_name",
         type=str,
         default="qbittensor-miners",
@@ -226,13 +246,6 @@ def add_validator_args(cls, parser):
     )
 
     parser.add_argument(
-        "--neuron.vpermit_tao_limit",
-        type=int,
-        help="The maximum number of TAO allowed to query a validator with a vpermit.",
-        default=4096,
-    )
-
-    parser.add_argument(
         "--wandb.project_name",
         type=str,
         help="The name of the project where you are sending the new run.",
@@ -246,10 +259,20 @@ def add_validator_args(cls, parser):
         default="opentensor-dev",
     )
 
+    parser.add_argument(
+        "--neuron.data_dir",
+        type=str,
+        help="Base directory for databases. Can also be set via DATA_DIR env var.",
+        default=os.environ.get("DATA_DIR", "data"),
+    )
+
 
 def config(cls):
     """
     Returns the configuration object specific to this miner or validator after adding relevant arguments.
+
+    Bittensor v11 no longer ships bt.Config / SDK argparse integration. We own
+    argument parsing and build a hierarchical Config namespace ourselves.
     """
     parser = argparse.ArgumentParser()
     bt.Wallet.add_args(parser)
@@ -257,4 +280,4 @@ def config(cls):
     bt.logging.add_args(parser)
     bt.Axon.add_args(parser)
     cls.add_args(parser)
-    return bt.Config(parser)
+    return config_from_parser(parser)

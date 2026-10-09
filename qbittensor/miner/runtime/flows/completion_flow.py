@@ -1,3 +1,20 @@
+# The MIT License (MIT)
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 from __future__ import annotations
 
 import json
@@ -5,9 +22,9 @@ import requests
 import bittensor as bt
 from typing import Any, Dict, Optional
 
-from qbittensor.utils.timestamping import timestamp_str
 from qbittensor.miner.runtime.repository import persist_failed as _db_persist_failed, persist_completed as _db_persist_completed
 from qbittensor.miner.runtime.observability.error_reporter import build_error_event
+from qbittensor.utils.services.telemetry import emit_from_registry
 
 
 def _valid_counts(counts: Dict[str, Any]) -> bool:
@@ -28,7 +45,8 @@ def _attempt_put(upload_url: str, payload: str) -> requests.Response:
     return response
 
 
-def _persist_failed_record(registry, tracked, receipt, error_message: str, meta: Optional[Dict[str, Any]] = None) -> None:
+def _persist_failed_record(registry, tracked, receipt, error_message: str,
+                           meta: Optional[Dict[str, Any]] = None) -> None:
     provider_val = None
     device_val = getattr(tracked.handle, "device_id", None)
     provider_exec_id = getattr(tracked.handle, "provider_job_id", None)
@@ -60,7 +78,8 @@ def _enqueue_error(registry, event: Dict[str, Any]) -> None:
         pass
 
 
-def _fail(registry, tracked, receipt, *, stage: str, code: str, message: str, retryable: bool, meta: Optional[Dict[str, Any]] = None, ctx: Optional[Dict[str, Any]] = None) -> bool:
+def _fail(registry, tracked, receipt, *, stage: str, code: str, message: str, retryable: bool,
+          meta: Optional[Dict[str, Any]] = None, ctx: Optional[Dict[str, Any]] = None) -> bool:
     event = build_error_event(
         stage=stage,
         code=code,
@@ -81,8 +100,6 @@ def persist_completion(registry, tracked) -> bool:
 
     Returns True only when results were uploaded and DB persisted; otherwise False.
     """
-    timestamp = timestamp_str()
-
     bt.logging.info(f" Starting completion persist for execution_id={tracked.execution_id}")
 
     # receipt
@@ -138,7 +155,7 @@ def persist_completion(registry, tracked) -> bool:
         bt.logging.debug(
             f" Extracted measurementCounts for execution_id={tracked.execution_id}: "
             f"num_bitstrings={(len(measurement_counts) if isinstance(measurement_counts, dict) else 0)}, "
-            f"total_shots={(sum(measurement_counts.values()) if isinstance(measurement_counts, dict) and len(measurement_counts)>0 else 0)}"
+            f"total_shots={(sum(measurement_counts.values()) if isinstance(measurement_counts, dict) and len(measurement_counts) > 0 else 0)}"
         )
     except Exception:
         pass
@@ -158,7 +175,8 @@ def persist_completion(registry, tracked) -> bool:
         )
 
     try:
-        counts_json = json.dumps(measurement_counts)
+        raw = getattr(receipt, "raw_result", None)
+        counts_json = raw if isinstance(raw, str) and raw else json.dumps(measurement_counts)
         bt.logging.info(f" Uploading results for execution {tracked.execution_id} to S3 (result_id={upload_data.id})")
         try:
             bt.logging.debug(
@@ -173,7 +191,9 @@ def persist_completion(registry, tracked) -> bool:
             status_code = getattr(getattr(e, 'response', None), 'status_code', None)
             text = getattr(getattr(e, 'response', None), 'text', None)
             if status_code == 403:
-                bt.logging.info(f" PUT returned 403; attempting single URL refresh for execution {tracked.execution_id}")
+                bt.logging.info(
+                    f" PUT returned 403; attempting single URL refresh for execution {tracked.execution_id}"
+                )
                 try:
                     refreshed = registry._get_upload_data()
                     if not refreshed:
@@ -223,6 +243,16 @@ def persist_completion(registry, tracked) -> bool:
                     ctx={"http_status": status_code, "response_body": text},
                 )
         bt.logging.info(f" Successfully uploaded results for execution {tracked.execution_id}")
+        emit_from_registry(registry, "miner_record_public_upload", tracked.execution_id)
+        meta = getattr(receipt, "metadata", None) or {}
+        proof = meta.get("proof") if isinstance(meta, dict) else None
+        if proof:
+            emit_from_registry(
+                registry,
+                "miner_record_private_proof",
+                tracked.execution_id,
+                str(getattr(receipt, "provider_job_id", "") or ""),
+            )
     except Exception as e:
         bt.logging.error(f" Unexpected error uploading results for execution {tracked.execution_id}: {e}")
         return _fail(
@@ -254,5 +284,3 @@ def persist_completion(registry, tracked) -> bool:
         )
 
     return True
-
-

@@ -1,7 +1,31 @@
+# The MIT License (MIT)
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 from __future__ import annotations
 
 from typing import Protocol, Optional, Dict, Any, List
 from pydantic import BaseModel, Field
+
+from qbittensor.utils.env import env_csv
+
+
+def list_public_classes_from_env() -> List[str]:
+    """PUBLIC_BACKEND_CLASSES. Empty means not placeable."""
+    return env_csv("PUBLIC_BACKEND_CLASSES")
 
 
 class Device(BaseModel):
@@ -25,6 +49,10 @@ class JobHandle(BaseModel):
 class BaseExecutionStatus(BaseModel):
     status: str = Field(description="QUEUED | RUNNING | COMPLETED | FAILED | CANCELLED | UNKNOWN")
     eta_seconds: Optional[int] = Field(default=None, description="Estimated seconds remaining for current execution")
+    message: Optional[str] = Field(
+        default=None,
+        description="Provider job message",
+    )
 
 
 class JobReceipt(BaseModel):
@@ -34,9 +62,16 @@ class JobReceipt(BaseModel):
     device_id: str = Field(description="Target device id")
     cost: Optional[float] = Field(default=None, description="Actual cost charged by the provider (if available)")
     shots: Optional[int] = Field(default=None, description="Shots for this execution if applicable")
-    timestamps: Optional[Dict[str, Any]] = Field(default=None, description="Timestamps blob (createdAt, endedAt, executionDuration, etc.)")
-    results: Optional[Dict[str, Any]] = Field(default=None, description="Results blob (e.g., measurementCounts, bitstrings)")
-    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional provider metadata (queue info, compute stats)")
+    timestamps: Optional[Dict[str, Any]] = Field(
+        default=None, description="Timestamps blob (createdAt, endedAt, executionDuration, etc.)")
+    results: Optional[Dict[str, Any]] = Field(
+        default=None, description="Results blob (e.g., measurementCounts, bitstrings)")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Additional provider metadata (queue info, compute stats)")
+    raw_result: Optional[str] = Field(
+        default=None,
+        description="Result object bytes (utf-8)",
+    )
 
 
 class MinerIdentity(BaseModel):
@@ -89,7 +124,7 @@ class Capabilities(BaseModel):
         default=None, description="Provider-specific capability metadata"
     )
 
-  
+
 class ProviderAdapter(Protocol):
     """interface for QPU providers."""
 
@@ -102,7 +137,13 @@ class ProviderAdapter(Protocol):
     def get_capability(self, device_id: Optional[str] = None) -> Optional[Capability]:
         ...
 
-    def submit(self, circuit_data: str, device_id: Optional[str] = None, shots: Optional[int] = None) -> JobHandle:
+    def submit(
+        self,
+        circuit_data: str,
+        device_id: Optional[str] = None,
+        shots: Optional[int] = None,
+        configuration_data: Optional[Dict[str, Any]] = None,
+    ) -> JobHandle:
         ...
 
     def poll(self, handle: JobHandle) -> BaseExecutionStatus:
@@ -120,4 +161,6 @@ class ProviderAdapter(Protocol):
     def get_pricing(self, device_id: Optional[str] = None) -> Optional[Dict[str, float]]:
         ...
 
-
+    def list_public_classes(self) -> List[str]:
+        """Classes this miner accepts. Empty means not placeable."""
+        ...

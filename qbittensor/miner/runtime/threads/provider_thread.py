@@ -1,3 +1,20 @@
+# The MIT License (MIT)
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 from __future__ import annotations
 
 import time
@@ -9,7 +26,7 @@ from qbittensor.validator.utils.execution_status import ExecutionStatus
 
 
 def run_provider(registry) -> None:
-    bt.logging.info(f"| Provider Thread | Provider thread started")
+    bt.logging.info("| Provider Thread | Provider thread started")
 
     while not registry._stop.is_set():
         try:
@@ -66,9 +83,10 @@ def run_provider(registry) -> None:
         except Exception as e:
             bt.logging.debug(f"Provider thread error: {e}")
 
-        time.sleep(registry.poll_interval_s)
+        if registry._stop.wait(registry.poll_interval_s):
+            break
 
-    bt.logging.info(f"| Provider Thread | Provider thread stopped")
+    bt.logging.info("| Provider Thread | Provider thread stopped")
 
 
 def poll_once(registry) -> None:
@@ -95,35 +113,24 @@ def poll_once(registry) -> None:
                 pass
             continue
         old_status = tracked.last_status
-        tracked.last_status = status.status
+        new_status = status.status
+        tracked.last_status = new_status
 
-        try:
-            tsvc = getattr(registry, "_telemetry_service", None)
-            if tsvc is not None:
-                miner_uid = getattr(registry, "_miner_uid", None)
-                miner_hotkey = None
-                try:
-                    miner_hotkey = getattr(getattr(registry, "keypair", None), "ss58_address", None)
-                except Exception:
-                    miner_hotkey = None
-                if miner_hotkey is None:
+        # Only report telemetry on actual status changes (avoid spam like COMPLETED -> COMPLETED)
+        if old_status != new_status:
+            try:
+                tsvc = getattr(registry, "_telemetry_service", None)
+                if tsvc is not None:
                     try:
-                        kp = getattr(getattr(registry, "_request_manager", None), "_keypair", None)
-                        miner_hotkey = getattr(kp, "ss58_address", None)
+                        tsvc.miner_record_execution_status_change(
+                            execution_id=execution_id,
+                            new_status=new_status,
+                            old_status=old_status,
+                        )
                     except Exception:
-                        miner_hotkey = None
-                try:
-                    tsvc.miner_record_execution_status_change(
-                        execution_id=execution_id,
-                        new_status=status.status,
-                        old_status=old_status,
-                        miner_uid=miner_uid,
-                        miner_hotkey=miner_hotkey,
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                        pass
+            except Exception:
+                pass
 
         if status.status == "COMPLETED":
             from qbittensor.miner.runtime.flows.completion_flow import persist_completion
@@ -133,7 +140,18 @@ def poll_once(registry) -> None:
                     registry._jobs.pop(execution_id, None)
         elif status.status in ("FAILED", "CANCELLED"):
             try:
-                provider_name = getattr(getattr(registry, "_default_device", None), "provider", None) if hasattr(registry, "_default_device") else None
+                provider_name = getattr(
+                    getattr(
+                        registry,
+                        "_default_device",
+                        None),
+                    "provider",
+                    None) if hasattr(
+                    registry,
+                    "_default_device") else None
+                platform_message = (status.message or "").strip() or None
+                if status.status == "CANCELLED" and not platform_message:
+                    platform_message = "Cancelled by request"
                 persist_failed(
                     registry,
                     execution_id=tracked.execution_id,
@@ -141,7 +159,7 @@ def poll_once(registry) -> None:
                     provider=provider_name,
                     provider_job_id=getattr(tracked.handle, "provider_job_id", None),
                     device_id=getattr(tracked.handle, "device_id", None),
-                    error_message=("Cancelled by request" if status.status == "CANCELLED" else None),
+                    error_message=platform_message,
                     metadata={"provider_status": status.status},
                 )
             except Exception as e:
@@ -157,7 +175,15 @@ def poll_once(registry) -> None:
                 bt.logging.trace(f" Failed to update status for {execution_id}: {e}")
         elif status.status == "UNKNOWN":
             try:
-                provider_name = getattr(getattr(registry, "_default_device", None), "provider", None) if hasattr(registry, "_default_device") else None
+                provider_name = getattr(
+                    getattr(
+                        registry,
+                        "_default_device",
+                        None),
+                    "provider",
+                    None) if hasattr(
+                    registry,
+                    "_default_device") else None
                 persist_failed(
                     registry,
                     execution_id=tracked.execution_id,
@@ -173,5 +199,3 @@ def poll_once(registry) -> None:
             finally:
                 with registry._lock:
                     registry._jobs.pop(execution_id, None)
-
-

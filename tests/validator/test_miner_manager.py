@@ -1,10 +1,29 @@
+# The MIT License (MIT)
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 import bittensor as bt
+from datetime import timedelta
 from typing import List
 import pytest
 
-from pkg.database.database_manager import DatabaseManager
-from qbittensor.utils.timestamping import timestamp
-from qbittensor.validator.miner_manager.MinerManager import Miner, MinerManager
+from qbittensor.constants import TIMESTAMP_FORMAT
+from qbittensor.database.database_manager import DatabaseManager
+from qbittensor.utils.time import timestamp
+from qbittensor.validator.miner_manager.miner_manager import Miner, MinerManager
 from tests.miner.constants import VALIDATOR_TEST_DB_NAME
 from tests.test_utils import get_mock_metagraph
 from tests.validator.utils import cleanup_db, setup_db
@@ -27,6 +46,8 @@ all_miners: List[Miner] = verified_miners + unverified_miners
 # --------------------------
 # Fixtures
 # --------------------------
+
+
 @pytest.fixture
 def setup() -> MinerManager:
     """Runs before each test."""
@@ -71,6 +92,7 @@ def test_get_active_miners_from_db(setup) -> None:
     for miner in all_miners:
         assert miner in tracked_miners
 
+
 def test_get_new_miners(setup) -> None:
     mm = setup
 
@@ -82,6 +104,7 @@ def test_get_new_miners(setup) -> None:
     assert len(new_miners) == 1
     assert m7 in new_miners
 
+
 def test_get_deregistered_miners(setup) -> None:
     mm = setup
 
@@ -92,6 +115,7 @@ def test_get_deregistered_miners(setup) -> None:
     deregistered_miners = mm._get_deregistered_miners(metagraph_miners, db_miners)
     assert len(deregistered_miners) == 1
     assert m7 in deregistered_miners
+
 
 def test_track_new_miners(setup) -> None:
     mm = setup
@@ -108,13 +132,14 @@ def test_track_new_miners(setup) -> None:
     """
     values = (m7.hotkey,)
     results = mm.database_manager.query_with_values(query, values)
-    
+
     # Test that there is a result
     assert len(results) == 1
-    
+
     miner = results[0]
     # Test that the uid matches the new miner (m7)
     assert miner[0] == m7.uid
+
 
 def test_run(setup) -> None:
     mm = setup
@@ -158,3 +183,23 @@ def test_run(setup) -> None:
 
     # Test m7 data is gone
     assert m7.hotkey not in hotkeys
+
+
+def test_prune_execution_metrics_older_than_90_days(setup) -> None:
+    mm = setup
+    old = (timestamp() - timedelta(days=91)).strftime(TIMESTAMP_FORMAT)
+    kept = (timestamp() - timedelta(days=89)).strftime(TIMESTAMP_FORMAT)
+    mm.database_manager.query_and_commit_many(
+        """
+        INSERT INTO execution_metrics (miner_hotkey, execution_id, shots, time_sent)
+        VALUES (?, ?, ?, ?)
+        """,
+        [("M1", "old-job", 1, old), ("M1", "kept-job", 1, kept)],
+    )
+
+    mm._prune_execution_metrics()
+
+    rows = mm.database_manager.query(
+        "SELECT execution_id FROM execution_metrics ORDER BY execution_id"
+    )
+    assert [row[0] for row in rows] == ["kept-job"]

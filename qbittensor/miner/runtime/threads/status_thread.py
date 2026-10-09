@@ -1,3 +1,20 @@
+# The MIT License (MIT)
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
 from __future__ import annotations
 
 import time
@@ -22,11 +39,17 @@ def collect_status_data(registry) -> None:
             pass
 
         identity = MinerIdentity(
-            device_id=registry.default_device_id,
-            provider=(getattr(registry._default_device, "provider", None) if registry._default_device else getattr(registry.adapter, "__class__").__name__.replace("Adapter", "").lower()),
-            vendor=(getattr(registry._default_device, "vendor", None) if registry._default_device else None),
-            device_type=(getattr(registry._default_device, "device_type", None) if registry._default_device else ("QPU" if (registry.default_device_id and "qpu" in registry.default_device_id) else "SIMULATOR")),
-        )
+            device_id=registry.default_device_id, provider=(
+                getattr(
+                    registry._default_device, "provider", None) if registry._default_device else getattr(
+                    registry.adapter, "__class__").__name__.replace(
+                    "Adapter", "").lower()), vendor=(
+                        getattr(
+                            registry._default_device, "vendor", None) if registry._default_device else None), device_type=(
+                                getattr(
+                                    registry._default_device, "device_type", None) if registry._default_device else (
+                                        "QPU" if (
+                                            registry.default_device_id and "qpu" in registry.default_device_id) else "SIMULATOR")), )
 
         caps_list = registry.adapter.list_capabilities()
         caps = None
@@ -86,8 +109,7 @@ def collect_status_data(registry) -> None:
 
 def run_job_server(registry) -> None:
     """Job server thread main loop - handles all job server communication."""
-    current_thread = bt.logging.__class__.__name__
-    bt.logging.info(f"| Job Server Thread | Job server thread started")
+    bt.logging.info("| Job Server Thread | Job server thread started")
 
     while not registry._stop.is_set():
         try:
@@ -116,6 +138,4 @@ def run_job_server(registry) -> None:
         except Exception as e:
             bt.logging.debug(f"Job server thread error: {e}")
 
-    bt.logging.info(f"| Job Server Thread | Job server thread stopped")
-
-
+    bt.logging.info("| Job Server Thread | Job server thread stopped")

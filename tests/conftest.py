@@ -1,9 +1,26 @@
+# The MIT License (MIT)
+# Copyright © 2026 qBitTensor Labs
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+# the Software.
+#
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
+from datetime import datetime, timedelta, timezone
 import pytest
 
 from qbittensor.miner.providers.mock import MockProviderAdapter
 from qbittensor.miner.runtime.registry import JobRegistry
-from pkg.database.database_manager import DatabaseManager
-from qbittensor.miner.miner_table_initializer import MinerTableInitializer
+from qbittensor.database.database_manager import DatabaseManager
 
 
 class DummyKeypair:
@@ -17,6 +34,8 @@ def _env_job_server(monkeypatch):
     monkeypatch.setenv("API_VERSION", "1")
     monkeypatch.setenv("PROVIDER", "mock")
     monkeypatch.setenv("TENSORAUTH_URL", "http://localhost:9998")
+    monkeypatch.delenv("PUBLIC_BACKEND_CLASSES", raising=False)
+    monkeypatch.setenv("WEIGHT_MIN_MINER_STAKE_ALPHA", "0")
 
     import qbittensor.miner.providers.registry as _preg
     monkeypatch.setattr(_preg, "get_adapter", lambda name=None: MockProviderAdapter())
@@ -27,20 +46,22 @@ def _env_job_server(monkeypatch):
 def temp_db(tmp_path):
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    import pkg.database.database_manager as dm
-    orig = dm.data_dir
-    dm.data_dir = str(data_dir)
+    import os
+    orig = os.environ.get("DATA_DIR")
+    os.environ["DATA_DIR"] = str(data_dir)
     try:
         yield data_dir
     finally:
-        dm.data_dir = orig
+        if orig is None:
+            os.environ.pop("DATA_DIR", None)
+        else:
+            os.environ["DATA_DIR"] = orig
 
 
 @pytest.fixture
 def db_manager(temp_db):
-    dbm = DatabaseManager("miner_test")
-    MinerTableInitializer(dbm).create_tables()
-    return dbm
+    # Migrations are applied automatically in DatabaseManager
+    return DatabaseManager("miner_test")
 
 
 @pytest.fixture
@@ -51,7 +72,16 @@ def mock_adapter():
 @pytest.fixture
 def registry(db_manager, mock_adapter):
     keypair = DummyKeypair()
-    reg = JobRegistry(db=db_manager, keypair=keypair, poll_interval_s=0.01, adapter=mock_adapter)
+    from unittest.mock import Mock
+    from qbittensor.utils.services.job import JobClient
+    mock_job_client = Mock(spec=JobClient)
+    mock_job_client.request_upload_slot.return_value = {"upload_url": "http://mock", "id": "mock-id"}
+    reg = JobRegistry(
+        db=db_manager,
+        keypair=keypair,
+        poll_interval_s=0.01,
+        adapter=mock_adapter,
+        job_client=mock_job_client)
     try:
         yield reg
     finally:
@@ -102,6 +132,7 @@ def http_mock(monkeypatch):
     monkeypatch.setattr("requests.sessions.Session.post", lambda self, url, *a, **k: fake_post(url, *a, **k))
     monkeypatch.setattr("requests.sessions.Session.patch", lambda self, url, *a, **k: fake_patch(url, *a, **k))
     # fallback here for case when code paths bypass get/post/patch
+
     def fake_request(self, method, url, *a, **k):
         m = (method or "").upper()
         if m == "GET":
@@ -113,7 +144,8 @@ def http_mock(monkeypatch):
         return Resp(200)
     monkeypatch.setattr("requests.sessions.Session.request", fake_request)
 
-    from qbittensor.utils.request.RequestManager import RequestManager as _RM
+    from qbittensor.utils.request.request_manager import RequestManager as _RM
+
     def _rm_get(self, endpoint: str, params: dict = {}, additional_headers: list = []):
         if endpoint == "executions":
             return Resp(204)
@@ -121,8 +153,6 @@ def http_mock(monkeypatch):
     monkeypatch.setattr(_RM, "get", _rm_get, raising=True)
     return True
 
-import pytest
-from datetime import datetime, timedelta, timezone
 
 class _FakeJWT:
     def __init__(self) -> None:
@@ -137,9 +167,7 @@ def _patch_env_and_jwt(monkeypatch):
     monkeypatch.setenv("API_VERSION", "1")
     monkeypatch.setenv("TENSORAUTH_URL", "http://127.0.0.1:8081")
 
-    from qbittensor.utils.request.JWTManager import JWTManager
+    from qbittensor.utils.request.jwt_manager import JWTManager
     monkeypatch.setattr(JWTManager, "get_jwt", lambda self: _FakeJWT(), raising=True)
 
     yield
-
-
