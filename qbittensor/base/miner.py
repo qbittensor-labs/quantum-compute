@@ -116,12 +116,16 @@ class BaseMinerNeuron(BaseNeuron):
 
         bt.logging.info(f"Miner starting at block: {self.block}")
 
+        # Miners never set weights, so chain last_update stays at registration
+        # and cannot pace this loop. Wait on the block of our own last sync.
+        last_sync_block = self.block
+
         # This loop maintains the miner's operations until intentionally stopped.
         try:
             while not self.should_exit:
                 try:
                     while (
-                        self.block - self.metagraph.last_update[self.uid]
+                        self.block - last_sync_block
                         < self.config.neuron.epoch_length
                     ):
                         if self.should_exit:
@@ -130,6 +134,7 @@ class BaseMinerNeuron(BaseNeuron):
                     if self.should_exit:
                         break
                     self.sync()
+                    last_sync_block = self.block
                     self.step += 1
                 except Exception:
                     # A chain RPC error must not stop the axon.
