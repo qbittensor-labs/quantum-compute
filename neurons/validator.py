@@ -16,6 +16,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import os
 import threading
 import time
 from typing import Any, List
@@ -32,6 +33,11 @@ from qbittensor.validator.miner_manager.capabilities import (
 from qbittensor.validator.miner_manager.miner_manager import MinerManager
 from qbittensor.utils.services import JobClient, TelemetryService
 from qbittensor.utils.env import env_csv, get_api_config, load_env
+from qbittensor.utils.neuron_liveness import (
+    NEURON_STALL_EXIT_S,
+    neuron_progress_is_stale,
+    touch_neuron_progress,
+)
 from qbittensor.utils.shutdown import install_shutdown
 from qbittensor.validator.miner_manager.next_miner import BasicMiner, NextMiner
 from qbittensor.base.validator import BaseValidatorNeuron
@@ -107,6 +113,7 @@ class Validator(BaseValidatorNeuron):
 
     def forward(self):
         # These timers only advance when forward runs.
+        touch_neuron_progress()
         self.heartbeat.timer.check_timer()
         self.miner_manager.timer.check_timer()
 
@@ -121,6 +128,7 @@ class Validator(BaseValidatorNeuron):
         self, current_thread: str, answered: set[str] | None = None
     ) -> None:
         """Class-claim for one miner who answered this sweep. Empty placeable set collects only."""
+        touch_neuron_progress()
         db = getattr(self, "database_manager", None)
         cached = get_placeable_classes(db) if db is not None else {}
         allowlist = env_csv("PUBLIC_BACKEND_CLASSES")
@@ -210,6 +218,7 @@ class Validator(BaseValidatorNeuron):
         A miner who answers with rate_limited is still collected, so in-flight
         work heartbeats, and is left out of class-claim.
         """
+        touch_neuron_progress()
         willing: set[str] = set()
         db = getattr(self, "database_manager", None)
         miners = self.next_miner.list_serving_miners(
@@ -219,6 +228,7 @@ class Validator(BaseValidatorNeuron):
             bt.logging.trace(f"| {current_thread} | ⏭️  Sweep: no serving miners")
             return willing
         synapse, compute = self.synapse_manager.collect_only_synapse(miners[0])
+        self._stamp_cancel_ids(synapse)
         axons = [m.axon for m in miners]
         try:
             responses = self.dendrite.query(
@@ -278,6 +288,18 @@ class Validator(BaseValidatorNeuron):
         synapse, compute = self.synapse_manager.collect_only_synapse(miner)
         self._query_and_score(miner, synapse, compute)
 
+    def _stamp_cancel_ids(self, synapse: Any) -> None:
+        """Copy cancel ids learned on the previous PATCH onto this synapse.
+
+        A miner only cancels executions it tracks. Extra ids are a no-op.
+        Older miners drop the field.
+        """
+        ids = getattr(getattr(self, "scorer", None), "cancel_execution_ids", None) or set()
+        try:
+            synapse.cancel_execution_ids = sorted(str(eid) for eid in ids if eid)
+        except Exception:
+            pass
+
     def _report_spark(self, classes: list[str]) -> None:
         if not classes:
             return
@@ -295,6 +317,7 @@ class Validator(BaseValidatorNeuron):
         allow_rebind: bool = True,
     ) -> None:
         current_thread = threading.current_thread().name
+        self._stamp_cancel_ids(synapse)
         try:
             response: List[Any] = self.dendrite.query(
                 axons=[next_miner.axon],
@@ -436,6 +459,63 @@ class Validator(BaseValidatorNeuron):
             pass
         return 100
 
+    def should_sync_metagraph(self) -> bool:
+        """Resync once per epoch, not on every forward.
+
+        The base check stays true whenever chain last_update[uid] is older
+        than epoch_length. This validator only stamps last_update after a
+        successful set_weights, and it skips weights between platform epochs,
+        so that stamp stays stale and every step did a full metagraph read.
+        One wedged read then blocked the heartbeat for the life of the process.
+        """
+        not_before = getattr(self, "_metagraph_sync_not_before", None)
+        if not_before is not None and time.monotonic() < not_before:
+            self._metagraph_sync_due = False
+            return False
+        last = getattr(self, "_last_metagraph_sync_block", None)
+        if last is None:
+            self._metagraph_sync_due = True
+            return True
+        try:
+            elapsed = int(self.block) - int(last)
+            due = elapsed >= int(self.config.neuron.epoch_length)
+        except Exception as exc:
+            bt.logging.warning(f"Metagraph sync interval check failed ({exc}); syncing")
+            due = True
+        self._metagraph_sync_due = due
+        return due
+
+    def sync(self) -> None:
+        touch_neuron_progress()
+        try:
+            super().sync()
+        except TimeoutError as exc:
+            bt.logging.error(f"Chain sync timed out: {exc}")
+            self._replace_subtensor()
+            # The blocked read is still inside the old client. Retrying every
+            # step would open another client each time, so wait one epoch.
+            epoch_s = max(60, int(getattr(self.config.neuron, "epoch_length", 100)) * 12)
+            self._metagraph_sync_not_before = time.monotonic() + epoch_s
+            raise
+        if getattr(self, "_metagraph_sync_due", False):
+            self._metagraph_sync_not_before = None
+            try:
+                self._last_metagraph_sync_block = int(self.block)
+            except Exception as exc:
+                bt.logging.warning(f"Could not record metagraph sync block: {exc}")
+
+    def _replace_subtensor(self) -> None:
+        """Drop a wedged chain client. The timed-out read is still blocked in it."""
+        from qbittensor.base.neuron import _network_from_config
+
+        network = _network_from_config(self.config)
+        bt.logging.warning(f"Opening a new subtensor connection ({network})")
+        fresh = bt.Subtensor(network=network)
+        self.subtensor = fresh
+        metagraph = getattr(self, "metagraph", None)
+        if metagraph is not None:
+            metagraph.subtensor = fresh
+
     def should_set_weights(self) -> bool:
         """Commit when the platform epoch snapshot changes (not local block//tempo)."""
         if self.step == 0:
@@ -549,12 +629,24 @@ if __name__ == "__main__":
     validator = Validator()
     install_shutdown(validator)
     with validator:
+        touch_neuron_progress()
         while (
             not validator.should_exit
             and validator.is_running
             and validator.thread
             and validator.thread.is_alive()
         ):
+            if neuron_progress_is_stale(NEURON_STALL_EXIT_S):
+                bt.logging.error(
+                    "Neuron thread has not progressed for "
+                    f"{NEURON_STALL_EXIT_S:.0f}s (last work was a chain read, "
+                    "job sweep, or class claim). Exiting so neuron-ops can restart the process."
+                )
+                # os._exit skips threads blocked in the chain client. The
+                # neuron thread is a daemon; a normal return would join it and
+                # wait out the same hang. neuron-ops-run is the systemd main
+                # process (Restart=no); the supervisor restarts a non-zero exit.
+                os._exit(1)
             time.sleep(1)
         if not validator.should_exit:
             bt.logging.warning("Validator background thread has stopped. Exiting.")

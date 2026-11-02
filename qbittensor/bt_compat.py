@@ -23,6 +23,7 @@ import logging
 import os
 import socket
 import sys
+import threading
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
@@ -366,6 +367,11 @@ class AxonInfo(BaseModel):
 # Metagraph adapter (old numpy-array surface → v11 typed metagraph)
 # ---------------------------------------------------------------------------
 
+# The SDK blocks forever on Future.result() when a websocket read never
+# finishes. 90s is well above a healthy lite sync (seconds).
+METAGRAPH_SYNC_TIMEOUT_S = 90.0
+
+
 class MetagraphAdapter:
     """Adapt v11 Metagraph to the attributes the neuron template still expects."""
 
@@ -426,10 +432,15 @@ class MetagraphAdapter:
         if sub is None:
             raise RuntimeError("Cannot sync metagraph without a subtensor client")
         self.subtensor = sub
-        kwargs = {"netuid": self.netuid}
+        kwargs: dict[str, Any] = {"netuid": self.netuid}
+        # lite=True is the neuron-template default. Commitments are a second
+        # full storage-map walk the validator never reads, and that walk is
+        # what stalls the neuron thread when a node stops answering.
+        if lite:
+            kwargs["commitments"] = False
         if block is not None:
             kwargs["block"] = block
-        self._mg = sub.subnets.metagraph(**kwargs)
+        self._mg = _metagraph_with_timeout(sub, kwargs)
         self._rebuild()
         return self
 
@@ -447,6 +458,42 @@ class MetagraphAdapter:
 
     def __repr__(self) -> str:
         return f"MetagraphAdapter(netuid={self.netuid}, n={self.n}, block={self.block})"
+
+
+def _metagraph_with_timeout(subtensor: Any, kwargs: dict[str, Any]) -> Any:
+    """Fetch a metagraph, or raise TimeoutError without applying a late result.
+
+    The fetch runs on a daemon thread because the SDK call cannot be cancelled.
+    On timeout the caller must stop using that subtensor client: the thread is
+    still blocked inside it.
+    """
+    outcome: dict[str, Any] = {}
+
+    def _fetch() -> None:
+        try:
+            try:
+                outcome["mg"] = subtensor.subnets.metagraph(**kwargs)
+            except TypeError:
+                if "commitments" not in kwargs:
+                    raise
+                # Older SDKs have no commitments flag. The heavy path remains,
+                # but the timeout below still applies.
+                fallback = {k: v for k, v in kwargs.items() if k != "commitments"}
+                outcome["mg"] = subtensor.subnets.metagraph(**fallback)
+        except BaseException as exc:  # noqa: BLE001 — hand the error to the caller
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=_fetch, name="metagraph-sync", daemon=True)
+    worker.start()
+    worker.join(METAGRAPH_SYNC_TIMEOUT_S)
+    if worker.is_alive():
+        raise TimeoutError(
+            f"metagraph sync exceeded {METAGRAPH_SYNC_TIMEOUT_S:.0f}s "
+            f"(netuid={kwargs.get('netuid')})"
+        )
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("mg")
 
 
 # ---------------------------------------------------------------------------

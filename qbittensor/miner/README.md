@@ -1,8 +1,12 @@
 # Miner (*_COMING SOON_*)
 
-The miner (`neurons/miner.py`) receives circuit jobs from validators over Bittensor synapses, submits them through a provider adapter, uploads results, and returns status on a later validator query.
+> **Coming soon — open mining.** Open mining is live on mainnet in a short validation period while we test the code end to end. Official miner onboarding opens shortly (within the next week). To be first in line, join the [Discord](https://discord.gg/xJ9JKPMJQD).
 
-Implementation is under `qbittensor/miner/`.
+The miner (`neurons/miner.py`) provides **gate-based quantum compute** capacity to the Open Quantum platform. It receives circuit jobs from validators over Bittensor synapses, submits them through a **provider adapter**, uploads results, and reports status back on a later validator query.
+
+You do not need to own quantum hardware: miners execute jobs through a **trusted quantum provider** (see the root [README.md](../../README.md)). Open Quantum is the first supported provider (`PROVIDER=openquantum` below). QPU owners and operators who want to supply hardware-backed capacity can contact support@openquantum.com.
+
+For implementation details (runtime threads, registry, completion flow), see the source under `qbittensor/miner/`.
 
 ## High-level operation
 

@@ -69,6 +69,7 @@ class JobRegistry:
         self.keypair = keypair
         self.poll_interval_s = poll_interval_s
         self._jobs: Dict[str, _TrackedJob] = {}
+        self._cancel_ids: set[str] = set()
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._submit_lock = threading.Lock()
@@ -354,6 +355,11 @@ class JobRegistry:
         backend_class_id: str | None = None,
     ) -> None:
         """Accept locally, then submit to provider and mark Queued/Running downstream."""
+        if self.cancel_was_requested(execution_id):
+            self._abandon_for_user_cancel(
+                execution_id, validator_hotkey, device_id=backend_class_id
+            )
+            return
         class_id = str(backend_class_id).strip() if backend_class_id else ""
         if not class_id:
             bt.logging.error(
@@ -409,6 +415,12 @@ class JobRegistry:
                 pass
             return
 
+        if self.cancel_was_requested(execution_id):
+            self._abandon_for_user_cancel(
+                execution_id, validator_hotkey, device_id=class_id
+            )
+            return
+
         try:
             handle = self.adapter.submit(
                 circuit_data=qasm,
@@ -449,6 +461,19 @@ class JobRegistry:
                 pass
             return
 
+        if self.cancel_was_requested(execution_id):
+            try:
+                self.adapter.cancel(handle)
+            except Exception:
+                pass
+            self._abandon_for_user_cancel(
+                execution_id,
+                validator_hotkey,
+                device_id=class_id,
+                provider_job_id=getattr(handle, "provider_job_id", None),
+            )
+            return
+
         try:
             update_to_queued(self, execution_id=execution_id, handle=handle)
         except Exception as e:
@@ -469,11 +494,53 @@ class JobRegistry:
         except requests.exceptions.RequestException as req_e:
             bt.logging.debug(f"HTTP request failed for execution url: {url}: {req_e}")
 
+    def note_cancel(self, execution_id: str) -> None:
+        if not execution_id:
+            return
+        with self._lock:
+            self._cancel_ids.add(str(execution_id))
+            tracked = self._jobs.get(execution_id)
+            if tracked is not None:
+                tracked.cancel_requested = True
+
+    def cancel_was_requested(self, execution_id: str) -> bool:
+        if not execution_id:
+            return False
+        with self._lock:
+            if str(execution_id) in self._cancel_ids:
+                return True
+            tracked = self._jobs.get(execution_id)
+            return bool(getattr(tracked, "cancel_requested", False))
+
+    def _abandon_for_user_cancel(
+        self,
+        execution_id: str,
+        validator_hotkey: str,
+        device_id: str | None = None,
+        provider_job_id: str | None = None,
+    ) -> None:
+        try:
+            from qbittensor.miner.runtime.repository import persist_failed
+            persist_failed(
+                self,
+                execution_id=execution_id,
+                validator_hotkey=validator_hotkey,
+                provider=None,
+                provider_job_id=provider_job_id,
+                device_id=None if device_id is None else str(device_id),
+                error_message="User canceled",
+                metadata=None,
+            )
+        except Exception as exc:
+            bt.logging.debug(f"Failed to record user cancel for {execution_id}: {exc}")
+
     def cancel(self, execution_id: str) -> None:
+        self.note_cancel(execution_id)
         with self._lock:
             tracked = self._jobs.get(execution_id)
         if not tracked:
             return
+        tracked.cancel_requested = True
         try:
             self.adapter.cancel(tracked.handle)
         except Exception as e:

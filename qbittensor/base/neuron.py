@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 
 # Sync calls set weights and also resyncs the metagraph.
 from qbittensor import bt_compat  # noqa: F401
-from qbittensor.bt_compat import MetagraphAdapter
+from qbittensor.bt_compat import MetagraphAdapter, _metagraph_with_timeout
 from qbittensor.utils.config import check_config, add_args, config
 from qbittensor.utils.misc import ttl_get_block
 from qbittensor import __spec_version__ as spec_version
@@ -54,8 +54,12 @@ def _network_from_config(cfg) -> str:
 
 
 def _fetch_metagraph(subtensor, *, netuid: int) -> MetagraphAdapter:
-    """Fetch a metagraph snapshot via ``subtensor.subnets.metagraph``."""
-    mg = subtensor.subnets.metagraph(netuid=netuid)
+    """Fetch a metagraph snapshot via ``subtensor.subnets.metagraph``.
+
+    Same 90s bound as ``MetagraphAdapter.sync``. An unbounded read here hangs
+    process startup, before the run-loop stall exit is watching.
+    """
+    mg = _metagraph_with_timeout(subtensor, {"netuid": netuid, "commitments": False})
     if isinstance(mg, MetagraphAdapter):
         return mg
     return MetagraphAdapter(mg, netuid=netuid, subtensor=subtensor)

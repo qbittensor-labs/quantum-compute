@@ -38,6 +38,8 @@ from qbittensor.validator.utils.execution_metrics import ExecutionMetrics
 
 # Matches Jobs PUBLIC_EXECUTION_LEASE_TTL_MS (45 minutes).
 PUBLIC_LEASE_SECONDS = 45 * 60
+# Exact text the worker refunds. Miners that cannot send status Canceled use it.
+USER_CANCELED_MESSAGE = "User canceled"
 _PROOF_CHEAT_MARKERS = (
     "already bound to another execution",
     "proof hashes do not match",
@@ -68,6 +70,8 @@ class Scorer:
         self._inflight_seen: Dict[str, Tuple[str, float]] = {}
         # Executions this validator sent. Only these may be patched lease_expired.
         self._assigned: set[str] = set()
+        # Learned from a PATCH response. Sent on the next synapse.
+        self.cancel_execution_ids: set[str] = set()
         self._load_inflight()
 
     def process_miner_responses(
@@ -150,6 +154,8 @@ class Scorer:
                     prev = self._last_active.get(next_miner.hotkey, set())
                     dropped = prev - seen_active - finished_ids
                     for eid in dropped:
+                        if eid in self.cancel_execution_ids:
+                            continue
                         bt.logging.warning(
                             f"| {current_thread} | Miner {next_miner.hotkey[:8]}... "
                             f"dropped in-flight {eid}"
@@ -204,6 +210,17 @@ class Scorer:
                             )
                         elif execution.status == ExecutionStatus.FAILED:
                             error_msg = execution.errorMessage if execution.errorMessage else "Miner reported failure"
+                            if error_msg == USER_CANCELED_MESSAGE:
+                                self._clear_inflight(execution.execution_id)
+                                self.cancel_execution_ids.discard(execution.execution_id)
+                                if not self._patch_user_canceled(execution):
+                                    patch_ok = False
+                                    continue
+                                bt.logging.trace(
+                                    f"| {current_thread} | Miner confirmed cancel for "
+                                    f"execution_id {execution.execution_id}"
+                                )
+                                continue
                             self._clear_inflight(execution.execution_id)
                             self.telemetry_service.vali_record_miner_failed(
                                 next_miner.hotkey,
@@ -358,6 +375,8 @@ class Scorer:
             "RUNNING": "Running",
             "COMPLETED": "Completed",
             "FAILED": "Failed",
+            "CANCELED": "Canceled",
+            "CANCELLED": "Canceled",
         }
         return mapping.get(text.upper(), text)
 
@@ -375,11 +394,55 @@ class Scorer:
             if "cost" in payload and len(payload) == 2:
                 self.job_client.patch_execution_cost(execution_id, float(payload["cost"]))
                 return True
-            self.job_client.patch_execution(execution_id, payload)
+            data = self.job_client.patch_execution(execution_id, payload)
+            self._note_cancel_response(execution_id, data, payload.get("status"))
             return True
         except Exception as e:
             bt.logging.warning(f"❗ Failed to patch job server for execution_id {execution_id}: {e}")
             return False
+
+    def _note_cancel_response(self, execution_id: str, data: Any, status_sent: Any) -> None:
+        """Remember a cancel flag from the PATCH body. Unknown keys are ignored."""
+        if not isinstance(data, dict):
+            return
+        sent = self._status_value(status_sent) if status_sent is not None else ""
+        if sent in ("Running", "Completed", "Failed", "Canceled"):
+            self.cancel_execution_ids.discard(execution_id)
+        if data.get("cancel_requested") and sent in ("Pending", "Queued", ""):
+            self.cancel_execution_ids.add(execution_id)
+
+    def _patch_user_canceled(self, execution: ExecutionData) -> bool:
+        """Report Canceled. An old platform gets Failed with the same message."""
+        data = self._failure_execution_data(execution.execution_data)
+        body: Dict[str, Any] = {
+            "status": "Canceled",
+            "message": USER_CANCELED_MESSAGE,
+            "execution_data": data,
+        }
+        try:
+            payload = dict(body)
+            payload["status"] = self._status_value(payload["status"])
+            result = self.job_client.patch_execution(execution.execution_id, payload)
+            self._note_cancel_response(
+                execution.execution_id, result, payload.get("status")
+            )
+            self.cancel_execution_ids.discard(execution.execution_id)
+            return True
+        except JobApiError as err:
+            if getattr(err, "status_code", None) != 400:
+                bt.logging.warning(
+                    f"❗ Failed to patch cancel for execution_id "
+                    f"{execution.execution_id}: {err}"
+                )
+                return False
+        except Exception as err:
+            bt.logging.warning(
+                f"❗ Failed to patch cancel for execution_id "
+                f"{execution.execution_id}: {err}"
+            )
+            return False
+        body["status"] = ExecutionStatus.FAILED
+        return self._patch(execution.execution_id, body)
 
     def _ban_for_proof(
         self,
@@ -576,6 +639,8 @@ class Scorer:
         ]
         n = 0
         for eid, hotkey in expired:
+            if eid in self.cancel_execution_ids:
+                continue
             if eid not in self._assigned:
                 self._clear_inflight(eid)
                 self._ban_for_lease(hotkey, eid)
