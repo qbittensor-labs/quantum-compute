@@ -193,6 +193,73 @@ def test_forward_submits_new_job(miner, monkeypatch):
     assert submitted_jobs[0]["validator_hotkey"] == "validator_hotkey_123"
 
 
+def test_forward_cancel_request_does_not_submit(miner, monkeypatch):
+    """A cancel id is recorded and the private job is never created."""
+    submitted_jobs = []
+    monkeypatch.setattr(miner.jobs, "submit", lambda **kwargs: submitted_jobs.append(kwargs))
+    canceled = []
+    monkeypatch.setattr(miner.jobs, "cancel", lambda eid: canceled.append(eid))
+    persisted = []
+
+    def _persist(*_args, **kwargs):
+        persisted.append(kwargs)
+
+    monkeypatch.setattr(
+        "qbittensor.miner.runtime.repository.persist_failed",
+        _persist,
+    )
+    synapse = CircuitSynapse(
+        execution_id="12345",
+        shots=10,
+        configuration_data={"shots": 10},
+        input_data_url="http://qasm",
+        last_circuit="1970-01-01 00:00:00",
+        finished_executions=[],
+        cancel_execution_ids=["12345", "other-exec"],
+    )
+    monkeypatch.setattr(miner, "_get_validator_hotkey", lambda syn: "validator_hotkey_123")
+    monkeypatch.setattr(miner, "_job_is_new", lambda eid: True)
+
+    miner.forward(synapse)
+
+    assert submitted_jobs == []
+    assert "12345" in canceled
+    assert "other-exec" in canceled
+    assert persisted
+    assert persisted[-1]["error_message"] == "User canceled"
+    assert persisted[-1]["execution_id"] == "12345"
+
+
+def test_forward_without_cancel_field_still_submits(miner, monkeypatch):
+    """An older validator omits cancel_execution_ids. Submit is unchanged."""
+    submitted_jobs = []
+    monkeypatch.setattr(miner.jobs, "submit", lambda **kwargs: submitted_jobs.append(kwargs))
+    monkeypatch.setattr(miner.jobs, "cancel", lambda eid: (_ for _ in ()).throw(AssertionError(eid)))
+
+    synapse = CircuitSynapse(
+        execution_id="12345",
+        shots=10,
+        configuration_data={"shots": 10},
+        input_data_url="http://qasm",
+        last_circuit="1970-01-01 00:00:00",
+        finished_executions=[],
+    )
+    assert synapse.cancel_execution_ids == []
+    monkeypatch.setattr(miner, "_get_validator_hotkey", lambda syn: "validator_hotkey_123")
+    monkeypatch.setattr(miner, "_job_is_new", lambda eid: True)
+
+    class Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr("requests.get", lambda url, timeout=5: Resp())
+    miner.forward(synapse)
+    miner.jobs.join_submits(2)
+    assert len(submitted_jobs) == 1
+
+
 def test_forward_rejects_duplicate_job(miner, monkeypatch):
     """Test that forward() doesn't re-submit existing jobs."""
     submitted_jobs = []

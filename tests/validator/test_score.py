@@ -644,6 +644,67 @@ class TestPatchJobRejectedSerialization:
         assert drop_args.args[1] == "inflight-1"
 
 
+def test_user_canceled_patches_canceled_then_falls_back(scorer: Scorer, mock_axon):
+    """New platforms get Canceled. A 400 keeps the Failed message old workers refund."""
+    from qbittensor.constants import COLLECT_SYNAPSE_ID
+    from qbittensor.utils.services.exceptions import JobApiError
+
+    finished = ExecutionData(
+        execution_id="exec-cancel",
+        shots=1,
+        upload_data_id=None,
+        execution_data={},
+        status=ExecutionStatus.FAILED,
+        errorMessage="User canceled",
+    )
+    synapse = CircuitSynapse(
+        execution_id=COLLECT_SYNAPSE_ID,
+        input_data_url="x",
+        shots=1,
+        configuration_data={},
+        last_circuit="0",
+        success=True,
+        finished_executions=[finished],
+    )
+    req = ComputeRequest(
+        execution_id=COLLECT_SYNAPSE_ID,
+        shots=1,
+        input_data_url="x",
+        configuration_data={},
+    )
+    miner = BasicMiner(hotkey="hk", uid=1, axon=mock_axon)
+    scorer.job_client.patch_execution.return_value = {"updated": True}
+    with patch.object(scorer, "_patch_job_rejected") as rejected:
+        scorer.process_miner_responses([synapse], miner, req)
+    rejected.assert_not_called()
+    body = scorer.job_client.patch_execution.call_args[0][1]
+    assert body["status"] == "Canceled"
+    assert body["message"] == "User canceled"
+
+    scorer.job_client.patch_execution.reset_mock()
+    scorer.job_client.patch_execution.side_effect = [
+        JobApiError("bad enum", status_code=400),
+        {"updated": True},
+    ]
+    assert scorer._patch_user_canceled(finished) is True
+    assert scorer.job_client.patch_execution.call_count == 2
+    fallback = scorer.job_client.patch_execution.call_args_list[1][0][1]
+    assert fallback["status"] == "Failed"
+    assert fallback["message"] == "User canceled"
+
+
+def test_queued_patch_records_cancel_requested(scorer: Scorer):
+    scorer.job_client.patch_execution.return_value = {
+        "updated": True,
+        "cancel_requested": True,
+    }
+    assert scorer._patch("exec-q", {"status": ExecutionStatus.QUEUED}) is True
+    assert "exec-q" in scorer.cancel_execution_ids
+    scorer.job_client.patch_execution.return_value = {"updated": True}
+    assert scorer._patch("exec-q", {"status": ExecutionStatus.RUNNING}) is True
+    assert "exec-q" not in scorer.cancel_execution_ids
+
+
 def test_inflight_hotkeys_unions_active_and_lease(scorer: Scorer):
     scorer._last_active["hk-a"] = {"e1"}
     scorer._last_active["hk-empty"] = set()

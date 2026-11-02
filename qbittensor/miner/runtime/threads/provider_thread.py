@@ -152,6 +152,12 @@ def poll_once(registry) -> None:
                 platform_message = (status.message or "").strip() or None
                 if status.status == "CANCELLED" and not platform_message:
                     platform_message = "Cancelled by request"
+                # Only a cancel this miner was asked for uses the refund message.
+                if (
+                    status.status == "CANCELLED"
+                    and getattr(tracked, "cancel_requested", False)
+                ):
+                    platform_message = "User canceled"
                 persist_failed(
                     registry,
                     execution_id=tracked.execution_id,

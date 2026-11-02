@@ -18,6 +18,58 @@
 from qbittensor.miner.runtime.threads import provider_thread as pt
 
 
+def _track_cancel_job(registry, execution_id: str, requested: bool):
+    from qbittensor.miner.providers.base import JobHandle
+    from qbittensor.miner.runtime.types import _TrackedJob
+
+    handle = JobHandle(provider_job_id=f"job-{execution_id}", device_id="class")
+    tracked = _TrackedJob(execution_id, "vhk", handle)
+    if requested:
+        tracked.cancel_requested = True
+    with registry._lock:
+        registry._jobs[execution_id] = tracked
+
+
+def test_provider_thread_requested_cancel_message(registry, http_mock, monkeypatch):
+    from qbittensor.miner.providers.base import BaseExecutionStatus
+
+    _track_cancel_job(registry, "C1", True)
+    monkeypatch.setattr(
+        registry.adapter,
+        "poll",
+        lambda handle: BaseExecutionStatus(status="CANCELLED", message=None),
+    )
+    persisted = {}
+
+    def _persist(_registry, **kwargs):
+        persisted.update(kwargs)
+
+    monkeypatch.setattr(pt, "persist_failed", _persist)
+    pt.poll_once(registry)
+    assert persisted["error_message"] == "User canceled"
+
+
+def test_provider_thread_unsolicited_cancel_is_not_a_user_cancel(
+    registry, http_mock, monkeypatch
+):
+    from qbittensor.miner.providers.base import BaseExecutionStatus
+
+    _track_cancel_job(registry, "C2", False)
+    monkeypatch.setattr(
+        registry.adapter,
+        "poll",
+        lambda handle: BaseExecutionStatus(status="CANCELLED", message=None),
+    )
+    persisted = {}
+
+    def _persist(_registry, **kwargs):
+        persisted.update(kwargs)
+
+    monkeypatch.setattr(pt, "persist_failed", _persist)
+    pt.poll_once(registry)
+    assert persisted["error_message"] == "Cancelled by request"
+
+
 def test_provider_thread_poll_once_handles_unknown_job(registry, http_mock, monkeypatch):
     # Submit job then remove it from adapter to simulate unknown
     exec_id = "B1"

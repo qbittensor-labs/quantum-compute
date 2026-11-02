@@ -78,7 +78,9 @@ class JobService:
     def __init__(self, config: OpenQuantumConfig) -> None:
         self._cfg = config
         self._sim = DryRunSimulator()
-        self._session: Session = make_session(allowed_methods=["GET", "POST", "PUT"])
+        self._session: Session = make_session(
+            allowed_methods=["GET", "POST", "PUT", "DELETE"]
+        )
         self._last_quote: Optional[list] = None
 
     def _headers(self) -> Dict[str, str]:

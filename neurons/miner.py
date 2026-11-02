@@ -106,6 +106,7 @@ class Miner(BaseMinerNeuron):
         # Finished rows go out before submit so the dendrite is not waiting on a download.
         self._update_synapse_with_finished_executions(synapse)
         self._drop_old_circuit_data()
+        self._apply_requested_cancels(synapse)
 
         if synapse.execution_id == COLLECT_SYNAPSE_ID:
             bt.logging.trace(
@@ -125,9 +126,15 @@ class Miner(BaseMinerNeuron):
         if self._job_is_new(synapse.execution_id):
             if self._mark_low_credits(synapse):
                 return synapse
+            if synapse.execution_id in self._requested_cancel_ids(synapse):
+                self._persist_user_cancel(synapse.execution_id, validator_hotkey)
+                return synapse
 
             # Submit off the axon thread. A slow download must not be scored as no response.
             def _bg_submit():
+                if self._cancel_was_requested(synapse.execution_id):
+                    self._persist_user_cancel(synapse.execution_id, validator_hotkey)
+                    return
                 try:
                     response = requests.get(synapse.input_data_url, timeout=5)
                     response.raise_for_status()
@@ -176,6 +183,46 @@ class Miner(BaseMinerNeuron):
             )
 
         return synapse
+
+    def _requested_cancel_ids(self, synapse: CircuitSynapse) -> set[str]:
+        raw = getattr(synapse, "cancel_execution_ids", None) or []
+        try:
+            return {str(eid) for eid in raw if eid}
+        except Exception:
+            return set()
+
+    def _apply_requested_cancels(self, synapse: CircuitSynapse) -> None:
+        """Record cancel ids before submit. A miner only acts on jobs it tracks."""
+        for eid in self._requested_cancel_ids(synapse):
+            try:
+                self.jobs.cancel(eid)
+            except Exception:
+                pass
+
+    def _cancel_was_requested(self, execution_id: str) -> bool:
+        check = getattr(self.jobs, "cancel_was_requested", None)
+        if not callable(check):
+            return False
+        try:
+            return check(execution_id) is True
+        except Exception:
+            return False
+
+    def _persist_user_cancel(self, execution_id: str, validator_hotkey: str) -> None:
+        try:
+            from qbittensor.miner.runtime.repository import persist_failed
+            persist_failed(
+                self.jobs,
+                execution_id=execution_id,
+                validator_hotkey=validator_hotkey,
+                provider=None,
+                provider_job_id=None,
+                device_id=None,
+                error_message="User canceled",
+                metadata=None,
+            )
+        except Exception as exc:
+            bt.logging.debug(f"Failed to record user cancel for {execution_id}: {exc}")
 
     def _list_public_classes(self) -> List[str]:
         """Classes this miner accepts. Empty means not placeable."""

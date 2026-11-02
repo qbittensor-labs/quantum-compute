@@ -15,10 +15,14 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import time
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import numpy as np
+import pytest
 
+from qbittensor.base.neuron import BaseNeuron
 from qbittensor.base.utils.weight_utils import process_weights_for_netuid
 from qbittensor.base.validator import BaseValidatorNeuron
 from tests.bt_v11_helpers import make_hyperparameters, wire_v11_subtensor
@@ -149,6 +153,54 @@ def test_validator_instantiates_and_key_methods(monkeypatch):
 
         assert v is not None
         assert getattr(v, "neuron_type", None) or True  # basic existence after construction
+
+
+def test_should_sync_follows_epoch_not_chain_last_update():
+    """Chain last_update stays stale between weight epochs. Pace on our own block."""
+    from neurons.validator import Validator
+
+    host = Mock()
+    host.uid = 0
+    host.metagraph.last_update = [0]
+    host._metagraph_sync_not_before = None
+    host._last_metagraph_sync_block = 1000
+    host.config.neuron.epoch_length = 100
+    host.block = 1099
+    assert Validator.should_sync_metagraph(host) is False
+    host.block = 1100
+    assert Validator.should_sync_metagraph(host) is True
+
+
+def test_timeout_backoff_skips_sync():
+    from neurons.validator import Validator
+
+    host = Mock()
+    host._metagraph_sync_not_before = time.monotonic() + 100
+    assert Validator.should_sync_metagraph(host) is False
+
+
+def test_sync_opens_a_new_subtensor_after_timeout():
+    from neurons.validator import Validator
+
+    host = Validator.__new__(Validator)
+    host.config = SimpleNamespace(
+        neuron=SimpleNamespace(epoch_length=100),
+        subtensor=SimpleNamespace(network="finney", chain_endpoint=None),
+    )
+    host.metagraph = Mock()
+    host.subtensor = Mock(name="old")
+    host._last_metagraph_sync_block = 10
+    fresh = Mock(name="fresh")
+    with (
+        patch.object(BaseNeuron, "sync", side_effect=TimeoutError("hung")),
+        patch("neurons.validator.bt.Subtensor", return_value=fresh),
+    ):
+        with pytest.raises(TimeoutError, match="hung"):
+            Validator.sync(host)
+    assert host.subtensor is fresh
+    assert host.metagraph.subtensor is fresh
+    assert host._last_metagraph_sync_block == 10
+    assert host._metagraph_sync_not_before > time.monotonic()
 
 
 def _weight_host():

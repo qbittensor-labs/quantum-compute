@@ -109,6 +109,13 @@ class CircuitSynapse(bt.Synapse):
         description="In-flight executions (Pending/Queued/Running) for validator heartbeat",
     )
 
+    # Optional. Older miners ignore unknown fields. An empty list is the default
+    # when an older validator omits it, so a new miner does not cancel anything.
+    cancel_execution_ids: list[str] = Field(
+        default_factory=list,
+        description="Public execution ids whose owner asked to cancel",
+    )
+
     capabilities: list[str] = Field(
         default_factory=list,
         description="backend_class.short_code values this miner accepts. Empty = not placeable.",
