@@ -227,13 +227,19 @@ class Validator(BaseValidatorNeuron):
         if not miners:
             bt.logging.trace(f"| {current_thread} | ⏭️  Sweep: no serving miners")
             return willing
-        synapse, compute = self.synapse_manager.collect_only_synapse(miners[0])
-        self._stamp_cancel_ids(synapse)
+        # Each miner has its own last_circuit. One shared synapse makes every
+        # miner replay finished rows the first miner has not seen yet.
+        synapses = []
+        compute = None
+        for miner in miners:
+            synapse, compute = self.synapse_manager.collect_only_synapse(miner)
+            self._stamp_cancel_ids(synapse)
+            synapses.append(synapse)
         axons = [m.axon for m in miners]
         try:
             responses = self.dendrite.query(
                 axons=axons,
-                synapse=synapse,
+                synapses=synapses,
                 deserialize=True,
                 timeout=10,
             )

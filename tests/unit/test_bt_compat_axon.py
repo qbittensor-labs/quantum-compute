@@ -27,6 +27,25 @@ from qbittensor.bt_compat import (
 )
 
 
+def test_paired_synapses_keeps_each_miners_watermark():
+    from qbittensor.bt_compat import _paired_synapses
+
+    axons = ["a", "b"]
+    first = {"last_circuit": "2026-11-01 00:00:00"}
+    second = {"last_circuit": "2026-11-10 00:00:00"}
+    paired_axons, requests = _paired_synapses(axons, synapse=None, synapses=[first, second])
+    assert paired_axons == axons
+    assert requests[0]["last_circuit"] != requests[1]["last_circuit"]
+
+
+def test_paired_synapses_rejects_a_short_list():
+    import pytest
+    from qbittensor.bt_compat import _paired_synapses
+
+    with pytest.raises(ValueError):
+        _paired_synapses(["a", "b"], synapse=None, synapses=[{"last_circuit": "t"}])
+
+
 def test_loopback_is_not_publishable():
     assert _is_publishable_ip(None) is False
     assert _is_publishable_ip("") is False

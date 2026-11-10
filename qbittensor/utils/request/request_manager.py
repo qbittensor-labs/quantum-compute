@@ -15,6 +15,8 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import gzip
+import json as json_lib
 import bittensor as bt
 from typing import Any, Dict, List, Tuple
 import requests
@@ -99,13 +101,16 @@ class RequestManager:
 
     def post_telemetry(self, endpoint: str, json: Dict = {}, params: Dict = {},
                        ignore_codes: List[int] = []) -> requests.Response:
-        """Make a POST request to the job server with signed header"""
+        """POST gzip JSON. The telemetry parser already inflates Content-Encoding: gzip."""
         headers = self._get_header()
         headers["X-Service-Name"] = self._service_name
         headers["X-Network"] = self._network
+        headers["Content-Type"] = "application/json"
+        headers["Content-Encoding"] = "gzip"
+        body = gzip.compress(json_lib.dumps(json).encode("utf-8"))
         full_url: str = self._build_telemetry_url(endpoint)
         response: requests.Response = self._session.post(
-            full_url, json=json, headers=headers, params=params, timeout=self._timeout)
+            full_url, data=body, headers=headers, params=params, timeout=self._timeout)
         self.check_error_code(response, full_url, "POST", ignore_codes=ignore_codes)
         return response
 

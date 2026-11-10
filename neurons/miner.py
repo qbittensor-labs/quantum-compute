@@ -285,7 +285,7 @@ class Miner(BaseMinerNeuron):
             SELECT execution_id, COALESCE(shots, 0) as shots, upload_data_id, provider_job_id,
                    status, errorMessage, timestamp, metadata_json
             FROM executions
-            WHERE timestamp > ? AND status != 'Running'
+            WHERE timestamp > ? AND status IN ('Completed', 'Failed')
         """
         values = (last_update,)
         with self.database_manager.lock:

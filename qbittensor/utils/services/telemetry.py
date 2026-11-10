@@ -64,11 +64,13 @@ class TelemetryService:
         network: str = "",
         export_interval_millis: int = 5000,
         max_queue_size: int = 1000,
-        batch_size: int = 10,
+        # The telemetry JSON parser accepts about 100kb after gzip is inflated.
+        batch_size: int = 200,
     ):
         self.max_queue_size = max_queue_size
         self.batch_size = batch_size
         self.flush_interval = export_interval_millis / 1000.0
+        self._last_queue_full_log = 0.0
 
         cfg = get_api_config()
         effective_base = base_url or cfg.telemetry_api_url
@@ -104,19 +106,7 @@ class TelemetryService:
         def worker():
             while not self._stop_event.is_set():
                 try:
-                    start_time = time.time()
-                    batch: list[Dict[str, Any]] = []
-                    while len(batch) < self.batch_size and not self._stop_event.is_set():
-                        try:
-                            item = self.queue.get(timeout=0.1)
-                            batch.append(item)
-                        except queue.Empty:
-                            break
-                    if batch:
-                        self._flush_batch(batch)
-                    sleep_time = max(0, self.flush_interval - (time.time() - start_time))
-                    if sleep_time > 0:
-                        self._stop_event.wait(sleep_time)
+                    self._drain_once()
                 except Exception as e:
                     bt.logging.error(f"Background worker error: {e}")
                     time.sleep(1)
@@ -161,6 +151,20 @@ class TelemetryService:
         for _ in batch:
             self.queue.task_done()
 
+    def _drain_once(self) -> None:
+        """Flush one batch. Wait while idle, then take whatever is already queued."""
+        batch: list[Dict[str, Any]] = []
+        try:
+            batch.append(self.queue.get(timeout=self.flush_interval))
+        except queue.Empty:
+            return
+        while len(batch) < self.batch_size:
+            try:
+                batch.append(self.queue.get_nowait())
+            except queue.Empty:
+                break
+        self._flush_batch(batch)
+
     def _enqueue_datapoint(
         self,
         type: str,
@@ -171,7 +175,12 @@ class TelemetryService:
     ) -> bool:
         try:
             if self.queue.full():
-                bt.logging.warning(f"Queue full (size {self.max_queue_size}); dropping datapoint {type}")
+                now = time.time()
+                if now - self._last_queue_full_log >= self.flush_interval:
+                    self._last_queue_full_log = now
+                    bt.logging.warning(
+                        f"Queue full (size {self.max_queue_size}); dropping datapoint {type}"
+                    )
                 return False
             safe_value = self._to_python_scalar(value)
             if isinstance(safe_value, (int, float)):
@@ -224,22 +233,22 @@ class TelemetryService:
 
     def vali_record_execution_from_jobs_api(self, execution_id: str, miner_hotkey: str):
         try:
+            if execution_id == COLLECT_SYNAPSE_ID:
+                return
             ts = timestamp_iso()
-            real = execution_id != COLLECT_SYNAPSE_ID
             self._enqueue_datapoint(
                 "vali_execution_from_jobs_api",
                 ts,
-                1.0 if real else 0.0,
+                1.0,
                 {"execution_id": execution_id},
                 miner_hotkey,
             )
-            if real:
-                self._enqueue_datapoint(
-                    "vali_handout",
-                    ts,
-                    execution_id,
-                    miner_hotkey=miner_hotkey,
-                )
+            self._enqueue_datapoint(
+                "vali_handout",
+                ts,
+                execution_id,
+                miner_hotkey=miner_hotkey,
+            )
         except Exception as e:
             bt.logging.debug(
                 f"Failed to enqueue vali_execution_from_jobs_api for miner {miner_hotkey}: {e}"

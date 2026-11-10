@@ -691,6 +691,20 @@ class Axon:
         return self.__str__()
 
 
+def _paired_synapses(axons: Any, synapse: Any, synapses: Any) -> tuple[list, list]:
+    """One request body per axon. A shared synapse is copied across the list."""
+    axon_list = [axons] if not isinstance(axons, (list, tuple)) else list(axons)
+    if synapses is None:
+        if synapse is None:
+            synapse = Synapse()
+        return axon_list, [synapse for _ in axon_list]
+    if len(synapses) != len(axon_list):
+        raise ValueError(
+            f"synapses ({len(synapses)}) must match axons ({len(axon_list)})"
+        )
+    return axon_list, list(synapses)
+
+
 class Dendrite:
     """Query remote axons over HTTP with hotkey auth (v11 replacement)."""
 
@@ -715,23 +729,21 @@ class Dendrite:
         deserialize: bool = True,
         run_async: bool = True,
         streaming: bool = False,
+        synapses: Any = None,
     ):
         if streaming:
             raise NotImplementedError("Streaming not implemented")
         import httpx
 
-        if synapse is None:
-            synapse = Synapse()
-
         single = not isinstance(axons, (list, tuple))
-        axon_list = [axons] if single else list(axons)
+        axon_list, requests = _paired_synapses(axons, synapse, synapses)
 
-        async def _one(axon: Any):
+        async def _one(axon: Any, req: Any):
             ip = getattr(axon, "ip", None)
             port = getattr(axon, "port", None)
             receiver = getattr(axon, "hotkey", None) or ""
             if not ip or not port:
-                s = synapse.copy() if hasattr(synapse, "copy") else synapse
+                s = req.copy() if hasattr(req, "copy") else req
                 if getattr(s, "dendrite", None) is None:
                     s.dendrite = TerminalInfo()
                 s.dendrite.status_code = 400
@@ -739,7 +751,7 @@ class Dendrite:
                 return s.deserialize() if deserialize and hasattr(s, "deserialize") else s
 
             url = f"http://{ip}:{port}/synapse"
-            body_obj = synapse.model_dump() if hasattr(synapse, "model_dump") else dict(synapse)
+            body_obj = req.model_dump() if hasattr(req, "model_dump") else dict(req)
             import json
 
             body = json.dumps(body_obj, default=str).encode("utf-8")
@@ -759,11 +771,11 @@ class Dendrite:
             try:
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(url, content=body, headers=headers)
-                s = synapse.copy() if hasattr(synapse, "copy") else synapse
+                s = req.copy() if hasattr(req, "copy") else req
                 if resp.status_code == 200:
                     data = resp.json()
                     if hasattr(s, "model_validate"):
-                        s = type(synapse).model_validate({**body_obj, **data})
+                        s = type(req).model_validate({**body_obj, **data})
                     if s.dendrite is None:
                         s.dendrite = TerminalInfo()
                     s.dendrite.status_code = 200
@@ -775,7 +787,7 @@ class Dendrite:
                     s.dendrite.status_message = resp.text[:200]
                 return s.deserialize() if deserialize and hasattr(s, "deserialize") else s
             except Exception as e:
-                s = synapse.copy() if hasattr(synapse, "copy") else synapse
+                s = req.copy() if hasattr(req, "copy") else req
                 if getattr(s, "dendrite", None) is None:
                     s.dendrite = TerminalInfo()
                 s.dendrite.status_code = 408
@@ -784,10 +796,18 @@ class Dendrite:
 
         import asyncio
 
-        results = await asyncio.gather(*(_one(a) for a in axon_list))
+        results = await asyncio.gather(*(_one(a, req) for a, req in zip(axon_list, requests)))
         return results[0] if single else list(results)
 
-    def query(self, axons: Any, synapse: Any = None, timeout: float = 12, deserialize: bool = True, **kwargs: Any):
+    def query(
+        self,
+        axons: Any,
+        synapse: Any = None,
+        timeout: float = 12,
+        deserialize: bool = True,
+        synapses: Any = None,
+        **kwargs: Any,
+    ):
         """Sync wrapper used by SN48 validator forward."""
         import asyncio
 
@@ -797,6 +817,7 @@ class Dendrite:
                 synapse=synapse,
                 timeout=timeout,
                 deserialize=deserialize,
+                synapses=synapses,
             )
         )
 
