@@ -72,6 +72,7 @@ class Scorer:
         self._assigned: set[str] = set()
         # Learned from a PATCH response. Sent on the next synapse.
         self.cancel_execution_ids: set[str] = set()
+        self._patch_already_terminal = False
         self._load_inflight()
 
     def process_miner_responses(
@@ -83,16 +84,10 @@ class Scorer:
         current_thread: str = threading.current_thread().name
 
         for synapse in responses:
-            self.telemetry_service.vali_record_synapse_response(
-                execution_id=synapse.execution_id,
-                miner_hotkey=next_miner.hotkey,
-                error_message=synapse.error_message,
-                success=synapse.success,
-                rate_limited=synapse.rate_limited
-            )
             try:
                 # Handle miner disconnected. Currently using `success` field in the
-                # synapse. This will cause a retry with the original compute request
+                # synapse. This will cause a retry with the original compute request.
+                # A normal collect is not telemetry. Record the failure itself.
                 if not synapse.success:
                     if synapse.error_message:
                         bt.logging.info(
@@ -103,6 +98,14 @@ class Scorer:
                         self.telemetry_service.vali_record_no_response(
                             next_miner.hotkey,
                             synapse.execution_id,
+                        )
+                    else:
+                        self.telemetry_service.vali_record_synapse_response(
+                            execution_id=synapse.execution_id,
+                            miner_hotkey=next_miner.hotkey,
+                            error_message=synapse.error_message,
+                            success=False,
+                            rate_limited=synapse.rate_limited,
                         )
                     # The miner never accepted. This does not spend a job attempt.
                     self._patch_job_rejected(
@@ -121,6 +124,14 @@ class Scorer:
                         self.telemetry_service.vali_record_rate_limited(
                             next_miner.hotkey,
                             synapse.execution_id,
+                        )
+                    else:
+                        self.telemetry_service.vali_record_synapse_response(
+                            execution_id=synapse.execution_id,
+                            miner_hotkey=next_miner.hotkey,
+                            error_message=synapse.error_message,
+                            success=synapse.success,
+                            rate_limited=True,
                         )
                     self._patch_job_rejected(synapse.execution_id, "Miner is rate limiting")
                     bt.logging.trace(
@@ -188,11 +199,7 @@ class Scorer:
                 patch_ok = True
                 for execution in synapse.finished_executions:
                     try:
-                        self.telemetry_service.vali_record_execution_from_miner(
-                            execution_id=execution.execution_id,
-                            status=execution.status,
-                            miner_hotkey=next_miner.hotkey,
-                        )
+                        self._patch_already_terminal = False
                         if execution.status == ExecutionStatus.COMPLETED:
                             self._record_time_received(
                                 next_miner.hotkey, execution.execution_id)
@@ -200,10 +207,11 @@ class Scorer:
                             if not self._patch_job_complete(execution, next_miner.hotkey):
                                 patch_ok = False
                                 continue
-                            self.telemetry_service.vali_record_complete(
-                                next_miner.hotkey,
-                                execution.execution_id,
-                            )
+                            if not self._patch_already_terminal:
+                                self.telemetry_service.vali_record_complete(
+                                    next_miner.hotkey,
+                                    execution.execution_id,
+                                )
                             bt.logging.trace(
                                 f"| {current_thread} | ✅  Miner reported successfuly completion "
                                 f"for execution_id {execution.execution_id}"
@@ -222,16 +230,17 @@ class Scorer:
                                 )
                                 continue
                             self._clear_inflight(execution.execution_id)
-                            self.telemetry_service.vali_record_miner_failed(
-                                next_miner.hotkey,
-                                execution.execution_id,
-                                error_msg,
-                            )
                             if not self._patch_job_rejected(
                                 execution.execution_id, error_msg, execution.execution_data
                             ):
                                 patch_ok = False
                                 continue
+                            if not self._patch_already_terminal:
+                                self.telemetry_service.vali_record_miner_failed(
+                                    next_miner.hotkey,
+                                    execution.execution_id,
+                                    error_msg,
+                                )
                             bt.logging.trace(
                                 f"| {current_thread} | ❌  Miner reported failure for execution_id "
                                 f"{execution.execution_id} with message: {error_msg}"
@@ -284,27 +293,6 @@ class Scorer:
             return False
         data = execution.execution_data if isinstance(execution.execution_data, dict) else {}
         proof = data.get("proof") if isinstance(data.get("proof"), dict) else None
-        if proof:
-            statement = proof.get("statement")
-            signature = proof.get("signature")
-            pem = proof.get("certificate_pem")
-            serial = proof.get("certificate_serial")
-            if not pem and isinstance(serial, str) and self.job_client is not None:
-                pem = self.job_client.fetch_certificate_pem(serial)
-            if isinstance(statement, str) and isinstance(signature, str) and isinstance(pem, str):
-                if not self.job_client.verify_ca_proof(statement, signature, pem):
-                    bt.logging.warning(
-                        f"❗ CA rejected private-job proof for execution {execution.execution_id}"
-                    )
-                    self._ban_for_proof(
-                        miner_hotkey, "bad_proof", execution.execution_id
-                    )
-                    self._patch_job_rejected(
-                        execution.execution_id,
-                        "Invalid private-job proof",
-                        execution.execution_data,
-                    )
-                    return False
         body: Dict[str, Any] = {
             "status": ExecutionStatus.COMPLETED,
             "upload_id": execution.upload_data_id,
@@ -324,7 +312,8 @@ class Scorer:
             payload = dict(body)
             if "status" in payload:
                 payload["status"] = self._status_value(payload["status"])
-            self.job_client.patch_execution(execution.execution_id, payload)
+            data = self.job_client.patch_execution(execution.execution_id, payload)
+            self._patch_already_terminal = self._is_already_terminal(data)
             return True
         except JobApiError as err:
             if miner_hotkey and self._is_proof_cheat(err):
@@ -358,6 +347,16 @@ class Scorer:
             "status": status,
         }
         return self._patch(execution_id, body)
+
+    @staticmethod
+    def _is_already_terminal(data: Any) -> bool:
+        """Jobs accepted a repeat of a status it already stored."""
+        if not isinstance(data, dict):
+            return False
+        if data.get("reason") == "already_terminal":
+            return True
+        message = str(data.get("message") or "")
+        return data.get("updated") is False and "already" in message.lower()
 
     @staticmethod
     def _status_value(status: Any) -> str:
@@ -395,6 +394,7 @@ class Scorer:
                 self.job_client.patch_execution_cost(execution_id, float(payload["cost"]))
                 return True
             data = self.job_client.patch_execution(execution_id, payload)
+            self._patch_already_terminal = self._is_already_terminal(data)
             self._note_cancel_response(execution_id, data, payload.get("status"))
             return True
         except Exception as e:
@@ -625,11 +625,9 @@ class Scorer:
         now: float | None = None,
         ttl_s: float = PUBLIC_LEASE_SECONDS,
     ) -> int:
-        """Local 24h ban when this validator has not seen the execution for the lease TTL.
+        """Assigner patches lease_expired and bans only if Jobs applies it.
 
-        Only the validator that sent the work patches Jobs. A patch is ignored
-        while any validator's heartbeat is inside the lease, and this tracker
-        keeps the execution. Observers ban locally and do not patch.
+        Others drop the local row.
         """
         now_ts = time.time() if now is None else now
         expired = [
@@ -643,8 +641,6 @@ class Scorer:
                 continue
             if eid not in self._assigned:
                 self._clear_inflight(eid)
-                self._ban_for_lease(hotkey, eid)
-                n += 1
                 continue
             outcome = self._patch_lease_expired(eid)
             if outcome == "fresh":

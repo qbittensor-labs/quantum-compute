@@ -74,6 +74,23 @@ def test_check_error_code(rm):
     assert not rm.check_error_code(response_299, "endpoint", "GET")
 
 
+def test_post_telemetry_gzips_json(rm):
+    import gzip
+    import json as json_lib
+
+    response = Mock(spec=requests.Response)
+    response.status_code = 201
+    response.text = ""
+    rm._session.post = Mock(return_value=response)
+    payload = {"datapoints": [{"type": "vali_complete"}]}
+    rm.post_telemetry("datapoints", json=payload)
+    kwargs = rm._session.post.call_args.kwargs
+    assert kwargs["headers"]["Content-Encoding"] == "gzip"
+    assert kwargs["headers"]["Content-Type"] == "application/json"
+    assert json_lib.loads(gzip.decompress(kwargs["data"])) == payload
+    assert "json" not in kwargs
+
+
 def test_get_header_mocks_jwt(rm):
     """Test that get_signed_header uses JWT and returns correct header"""
     headers = rm._get_header()

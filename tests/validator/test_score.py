@@ -20,7 +20,7 @@ import pytest
 import bittensor as bt
 
 from qbittensor.database.database_manager import DatabaseManager
-from qbittensor.protocol import CircuitSynapse, ExecutionData
+from qbittensor.protocol import COLLECT_SYNAPSE_ID, CircuitSynapse, ExecutionData
 from qbittensor.utils.request.jwt_manager import JWT
 from qbittensor.utils.time import timestamp
 from qbittensor.validator.compute_request.compute_request import ComputeRequest
@@ -175,6 +175,36 @@ def test_synapse_success_false(scorer: Scorer, synapse: CircuitSynapse, compute_
         mock_patch_job_rejected.assert_called_once_with(synapse.execution_id, "Miner did not respond")
 
 
+def test_failed_job_records_no_response_only(
+        scorer: Scorer, synapse: CircuitSynapse, compute_request: ComputeRequest, mock_axon):
+    synapse.success = False
+    synapse.finished_executions = []
+    with patch.object(scorer, "_patch_job_rejected"):
+        scorer.process_miner_responses(
+            [synapse],
+            BasicMiner(hotkey="miner_hotkey_1", uid=2, axon=mock_axon),
+            compute_request,
+        )
+    scorer.telemetry_service.vali_record_no_response.assert_called_once()
+    scorer.telemetry_service.vali_record_synapse_response.assert_not_called()
+
+
+def test_failed_collect_records_one_synapse_response(
+        scorer: Scorer, synapse: CircuitSynapse, compute_request: ComputeRequest, mock_axon):
+    synapse.success = False
+    synapse.execution_id = COLLECT_SYNAPSE_ID
+    synapse.finished_executions = []
+    compute_request.execution_id = COLLECT_SYNAPSE_ID
+    with patch.object(scorer, "_patch_job_rejected"):
+        scorer.process_miner_responses(
+            [synapse],
+            BasicMiner(hotkey="miner_hotkey_1", uid=2, axon=mock_axon),
+            compute_request,
+        )
+    scorer.telemetry_service.vali_record_synapse_response.assert_called_once()
+    scorer.telemetry_service.vali_record_no_response.assert_not_called()
+
+
 def test_synapse_rate_limited(scorer: Scorer, synapse: CircuitSynapse, compute_request: ComputeRequest, mock_axon):
     """Test that we call the function to reject the job when rate_limited is True"""
     synapse.rate_limited = True
@@ -265,6 +295,37 @@ def test_completed_jobs_handled(scorer: Scorer, synapse: CircuitSynapse, compute
         mock_record_time_received.assert_called_once_with("miner_hotkey_1", synapse.finished_executions[0].execution_id)
         mock_patch_job_complete.assert_called_once_with(
             synapse.finished_executions[0], "miner_hotkey_1")
+
+
+def test_already_terminal_completion_skips_telemetry(
+        scorer: Scorer, synapse: CircuitSynapse, compute_request: ComputeRequest, mock_axon):
+    scorer.job_client.patch_execution.return_value = {
+        "updated": False,
+        "reason": "already_terminal",
+        "message": "Execution already in this status",
+    }
+    with patch.object(scorer._metrics, "upsert_last_circuit") as mock_upsert:
+        scorer.process_miner_responses(
+            [synapse],
+            BasicMiner(hotkey="miner_hotkey_1", uid=2, axon=mock_axon),
+            compute_request,
+        )
+    mock_upsert.assert_called_once()
+    scorer.telemetry_service.vali_record_complete.assert_not_called()
+    scorer.telemetry_service.vali_record_synapse_response.assert_not_called()
+
+
+def test_new_completion_emits_telemetry(
+        scorer: Scorer, synapse: CircuitSynapse, compute_request: ComputeRequest, mock_axon):
+    scorer.job_client.patch_execution.return_value = {"updated": True}
+    scorer.process_miner_responses(
+        [synapse],
+        BasicMiner(hotkey="miner_hotkey_1", uid=2, axon=mock_axon),
+        compute_request,
+    )
+    scorer.telemetry_service.vali_record_complete.assert_called_once()
+    scorer.telemetry_service.vali_record_execution_from_miner.assert_not_called()
+    scorer.telemetry_service.vali_record_synapse_response.assert_not_called()
 
 
 def test_last_circuit_not_advanced_when_complete_patch_fails(
@@ -425,7 +486,9 @@ class TestPatchJobRejectedSerialization:
             )
         assert "proof" in original
 
-    def test_complete_rejects_when_ca_proof_invalid(self, scorer: Scorer):
+    def test_complete_rejects_when_jobs_rejects_the_proof(self, scorer: Scorer):
+        from qbittensor.utils.services.exceptions import JobApiError
+
         job = ExecutionData(
             execution_id="exec-006",
             shots=1,
@@ -439,28 +502,59 @@ class TestPatchJobRejectedSerialization:
                 }
             },
         )
-        scorer.job_client.verify_ca_proof = Mock(return_value=False)
-        with patch.object(scorer.job_client, "patch_execution") as mock_patch:
-            with patch(
-                "qbittensor.validator.reward.score.ban_miner"
-            ) as mock_ban:
-                assert scorer._patch_job_complete(job, "hk-bad") is False
-            mock_ban.assert_called_once()
-            assert mock_ban.call_args.kwargs.get("hours") == 24
-            assert mock_ban.call_args.args[1] == "hk-bad"
-            scorer.telemetry_service.vali_record_ban.assert_called()
-            scorer.telemetry_service.vali_record_proof_fail.assert_called()
-            mock_patch.assert_called_once_with(
-                "exec-006",
-                {
-                    "status": "Failed",
-                    "message": "Invalid private-job proof",
-                    "execution_data": {},
-                },
-            )
-            assert "proof" in job.execution_data
+        scorer.job_client.patch_execution = Mock(
+            side_effect=[
+                JobApiError(
+                    "Failed to patch execution exec-006",
+                    status_code=400,
+                    response_text='{"message":"Execution proof signature is invalid"}',
+                ),
+                None,
+            ]
+        )
+        with patch(
+            "qbittensor.validator.reward.score.ban_miner"
+        ) as mock_ban:
+            assert scorer._patch_job_complete(job, "hk-bad") is False
+        mock_ban.assert_called_once()
+        assert mock_ban.call_args.kwargs.get("hours") == 24
+        assert mock_ban.call_args.args[1] == "hk-bad"
+        scorer.telemetry_service.vali_record_ban.assert_called()
+        scorer.telemetry_service.vali_record_proof_fail.assert_called()
+        fail_body = scorer.job_client.patch_execution.call_args_list[1][0][1]
+        assert fail_body["status"] == "Failed"
+        assert fail_body["message"] == "Invalid private-job proof"
+        assert "proof" in job.execution_data
 
-    def test_complete_verifies_proof_even_if_dry_run_flag_present(self, scorer: Scorer):
+    def test_already_completed_execution_does_not_ban(self, scorer: Scorer):
+        job = ExecutionData(
+            execution_id="exec-done",
+            shots=1,
+            upload_data_id="upload-1",
+            status=ExecutionStatus.COMPLETED,
+            execution_data={
+                "proof": {
+                    "statement": "pot.job.v1\njob_id=j1",
+                    "signature": "sig",
+                    "certificate_pem": "pem",
+                }
+            },
+        )
+        scorer.job_client.patch_execution.return_value = {
+            "updated": False,
+            "reason": "already_terminal",
+            "message": "Execution already in this status",
+        }
+        with patch(
+            "qbittensor.validator.reward.score.ban_miner"
+        ) as mock_ban:
+            assert scorer._patch_job_complete(job, "hk-next") is True
+        mock_ban.assert_not_called()
+        scorer.telemetry_service.vali_record_proof_fail.assert_not_called()
+
+    def test_complete_sends_proof_even_if_dry_run_flag_present(self, scorer: Scorer):
+        from qbittensor.utils.services.exceptions import JobApiError
+
         job = ExecutionData(
             execution_id="exec-007",
             shots=1,
@@ -475,11 +569,25 @@ class TestPatchJobRejectedSerialization:
                 },
             },
         )
-        scorer.job_client.verify_ca_proof = Mock(return_value=False)
-        with patch.object(scorer.job_client, "patch_execution") as mock_patch:
+        scorer.job_client.patch_execution = Mock(
+            side_effect=[
+                JobApiError(
+                    "Failed to patch execution exec-007",
+                    status_code=400,
+                    response_text='{"message":"Execution proof signature is invalid"}',
+                ),
+                None,
+            ]
+        )
+        with patch(
+            "qbittensor.validator.reward.score.ban_miner"
+        ) as mock_ban:
             assert scorer._patch_job_complete(job, "hk-dry") is False
-        scorer.job_client.verify_ca_proof.assert_called_once()
-        fail_body = mock_patch.call_args[0][1]
+        mock_ban.assert_called_once()
+        complete_body = scorer.job_client.patch_execution.call_args_list[0][0][1]
+        assert complete_body["execution_data"]["dry_run"] is True
+        assert "proof" in complete_body["execution_data"]
+        fail_body = scorer.job_client.patch_execution.call_args_list[1][0][1]
         assert fail_body["message"] == "Invalid private-job proof"
         assert fail_body["execution_data"] == {"dry_run": True}
         assert "proof" in job.execution_data
@@ -506,15 +614,16 @@ class TestPatchJobRejectedSerialization:
         ban_tel = scorer.telemetry_service.vali_record_ban.call_args
         assert ban_tel.args[1] == "lease_expired"
 
-    def test_observer_lease_silence_bans_without_patch(self, scorer: Scorer):
+    def test_observer_lease_silence_does_not_ban(self, scorer: Scorer):
         scorer._inflight_seen["exec-seen"] = ("hk-other", 0.0)
         with patch(
             "qbittensor.validator.reward.score.ban_miner"
         ) as mock_ban:
             n = scorer.expire_stale_leases(now=45 * 60 + 1)
-        assert n == 1
-        mock_ban.assert_called_once()
+        assert n == 0
+        mock_ban.assert_not_called()
         scorer.job_client.patch_execution.assert_not_called()
+        scorer.telemetry_service.vali_record_lease_expired.assert_not_called()
         assert "exec-seen" not in scorer._inflight_seen
 
     def test_fresh_lease_patch_does_not_ban_the_assigner(self, scorer: Scorer):

@@ -78,6 +78,7 @@ def test_failed_synapse_does_not_cache_empty_capabilities(tmp_path, monkeypatch)
 def test_invalid_ca_proof_bans_miner_and_fails_job(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from qbittensor.protocol import ExecutionData
+    from qbittensor.utils.services.exceptions import JobApiError
     from qbittensor.validator.reward.score import Scorer
     from qbittensor.validator.miner_manager.capabilities import is_banned
     from qbittensor.validator.utils.execution_status import ExecutionStatus
@@ -86,8 +87,14 @@ def test_invalid_ca_proof_bans_miner_and_fails_job(tmp_path, monkeypatch):
     db = DatabaseManager("validator_ban_proof")
     tel = Mock()
     jobc = Mock()
-    jobc.verify_ca_proof.return_value = False
-    jobc.fetch_certificate_pem.return_value = None
+    jobc.patch_execution.side_effect = [
+        JobApiError(
+            "Failed to patch execution exec-1",
+            status_code=400,
+            response_text='{"message":"Execution proof signature is invalid"}',
+        ),
+        None,
+    ]
     scorer = Scorer(db, Mock(), telemetry_service=tel, job_client=jobc)
     execution = ExecutionData(
         execution_id="exec-1",
@@ -105,9 +112,9 @@ def test_invalid_ca_proof_bans_miner_and_fails_job(tmp_path, monkeypatch):
     )
     assert scorer._patch_job_complete(execution, "hk-bad") is False
     assert is_banned(db, "hk-bad") is True
-    jobc.patch_execution.assert_called()
-    body = jobc.patch_execution.call_args[0][1]
-    assert body["status"] in ("Failed", ExecutionStatus.FAILED)
+    fail_body = jobc.patch_execution.call_args_list[1][0][1]
+    assert fail_body["status"] in ("Failed", ExecutionStatus.FAILED)
+    assert fail_body["message"] == "Invalid private-job proof"
 
 
 def test_class_claim_reports_spark_on_204(tmp_path, monkeypatch):
@@ -157,6 +164,9 @@ def test_sweep_leaves_rate_limited_miners_out_of_class_claim(tmp_path, monkeypat
     willing = v._sweep_running_jobs("t")
 
     assert willing == {"ok"}
+    assert v.synapse_manager.collect_only_synapse.call_count == 2
+    sent = v.dendrite.query.call_args.kwargs["synapses"]
+    assert len(sent) == 2
     v.next_miner.record_success.assert_any_call("broke")
     v.next_miner.record_success.assert_any_call("ok")
     assert v.scorer.process_miner_responses.call_count == 2

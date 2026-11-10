@@ -1,4 +1,5 @@
-from unittest.mock import Mock
+import queue
+from unittest.mock import Mock, patch
 
 from qbittensor.protocol import COLLECT_SYNAPSE_ID
 from qbittensor.utils.services.telemetry import TelemetryService, emit_from_registry
@@ -79,9 +80,34 @@ def test_handout_skips_collect_only():
     items = []
     while not svc.queue.empty():
         items.append(svc.queue.get_nowait())
-    assert [i["type"] for i in items] == ["vali_execution_from_jobs_api"]
-    assert items[0]["value"] == 0.0
-    assert items[0]["attributes"]["miner_hotkey"] == "hk2"
+    assert items == []
+
+
+def test_drain_once_flushes_a_backlog_in_one_batch():
+    svc = _svc()
+    svc.queue = queue.Queue()
+    svc.batch_size = 100
+    svc.flush_interval = 30
+    svc._flush_batch = Mock()
+    for i in range(25):
+        svc.queue.put({"i": i})
+    svc._drain_once()
+    svc._flush_batch.assert_called_once()
+    assert len(svc._flush_batch.call_args.args[0]) == 25
+    assert svc.queue.empty()
+
+
+def test_queue_full_warns_once_per_interval():
+    svc = _svc()
+    svc.queue = queue.Queue(maxsize=1)
+    svc.queue.put({"x": 1})
+    svc.max_queue_size = 1
+    svc.flush_interval = 60
+    svc._last_queue_full_log = 0.0
+    with patch("qbittensor.utils.services.telemetry.bt.logging") as log:
+        assert svc._enqueue_datapoint("t", "ts", 1.0) is False
+        assert svc._enqueue_datapoint("t2", "ts", 1.0) is False
+    assert log.warning.call_count == 1
 
 
 def test_emit_from_registry_noops_without_service():
