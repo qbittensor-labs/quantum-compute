@@ -454,7 +454,7 @@ def test_forward_sets_capabilities_from_env_when_adapter_missing(miner, monkeypa
     assert result.capabilities == ["ionq:forte-1", "quantumrings:qasm3"]
 
 
-def test_forward_capabilities_default_empty(miner):
+def test_forward_capabilities_default_when_unset(miner):
     miner.jobs.adapter = None
     synapse = CircuitSynapse(
         execution_id="77777",
@@ -465,4 +465,11 @@ def test_forward_capabilities_default_empty(miner):
         finished_executions=[],
     )
     result = miner.forward(synapse)
-    assert result.capabilities == []
+    assert result.capabilities == [
+        "iqm:garnet",
+        "aqt:ibex-q1",
+        "ionq:forte-1",
+        "rigetti:cepheus-1-108q",
+        "iqm:emerald",
+        "ionq:forte-ent",
+    ]

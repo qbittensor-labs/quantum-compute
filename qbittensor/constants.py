@@ -46,6 +46,12 @@ EXECUTION_METRICS_TTL_DAYS: int = 90
 # Must be lexicographically sortable for correct "most recent" logic.
 TIMESTAMP_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 
+# Classes a miner advertises when PUBLIC_BACKEND_CLASSES is unset.
+DEFAULT_PUBLIC_BACKEND_CLASSES: str = (
+    "iqm:garnet,aqt:ibex-q1,ionq:forte-1,"
+    "rigetti:cepheus-1-108q,iqm:emerald,ionq:forte-ent"
+)
+
 # Miner runtime intervals
 STATUS_UPDATE_INTERVAL_S: int = 30
 JOB_POLL_INTERVAL_S: float = 30.0

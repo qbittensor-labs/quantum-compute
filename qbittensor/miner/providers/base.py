@@ -20,12 +20,13 @@ from __future__ import annotations
 from typing import Protocol, Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 
+from qbittensor.constants import DEFAULT_PUBLIC_BACKEND_CLASSES
 from qbittensor.utils.env import env_csv
 
 
 def list_public_classes_from_env() -> List[str]:
-    """PUBLIC_BACKEND_CLASSES. Empty means not placeable."""
-    return env_csv("PUBLIC_BACKEND_CLASSES")
+    """PUBLIC_BACKEND_CLASSES. Unset uses the classes Open Quantum runs today."""
+    return env_csv("PUBLIC_BACKEND_CLASSES", DEFAULT_PUBLIC_BACKEND_CLASSES)
 
 
 class Device(BaseModel):
@@ -162,5 +163,5 @@ class ProviderAdapter(Protocol):
         ...
 
     def list_public_classes(self) -> List[str]:
-        """Classes this miner accepts. Empty means not placeable."""
+        """Classes this miner accepts. Unset uses the classes Open Quantum runs today."""
         ...

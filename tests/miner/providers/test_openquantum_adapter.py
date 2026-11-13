@@ -63,10 +63,17 @@ def test_list_public_classes_prefers_env(monkeypatch):
     assert adapter.list_public_classes() == ["ionq:forte-1", "quantumrings:qasm3"]
 
 
-def test_list_public_classes_empty_when_unset(monkeypatch):
+def test_list_public_classes_defaults_when_unset(monkeypatch):
     monkeypatch.delenv("PUBLIC_BACKEND_CLASSES", raising=False)
     adapter = OpenQuantumAdapter(config=_dry_cfg())
-    assert adapter.list_public_classes() == []
+    assert adapter.list_public_classes() == [
+        "iqm:garnet",
+        "aqt:ibex-q1",
+        "ionq:forte-1",
+        "rigetti:cepheus-1-108q",
+        "iqm:emerald",
+        "ionq:forte-ent",
+    ]
 
 
 def test_from_env_does_not_require_backend_class(monkeypatch):

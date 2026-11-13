@@ -104,8 +104,9 @@ env:
   secret: true
   help: "Optional static JWT. When unset, the SDK key is used."
 - name: PUBLIC_BACKEND_CLASSES
-  required: true
-  help: "Classes this miner accepts. Empty means no jobs are placed."
+  required: false
+  default: "iqm:garnet,aqt:ibex-q1,ionq:forte-1,rigetti:cepheus-1-108q,iqm:emerald,ionq:forte-ent"
+  help: "Classes this miner accepts. Unset uses the classes Open Quantum runs today."
 - name: OPENQUANTUM_MIN_CREDITS
   required: false
   default: "50"
