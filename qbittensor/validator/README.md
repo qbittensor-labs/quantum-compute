@@ -10,7 +10,7 @@ The validator periodically:
 
 - Pulls work from the job / platform APIs (authenticated with the validator hotkey).
 - Selects the next eligible miner and sends a `CircuitSynapse` query.
-- Collects finished executions from miners and records metrics.
+- Collects finished executions from miners and records metrics. A completed result counts when it includes the provider certificate for that job.
 - Sets on-chain weights from the computed scores.
 
 Full details live in the code under `qbittensor/validator/`.

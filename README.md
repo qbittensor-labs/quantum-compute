@@ -16,8 +16,6 @@
 
 # Quantum Compute (Bittensor Subnet 48)
 
-> **Coming soon — open mining.** Open mining is live on mainnet in a short validation period while we test the code end to end. Official miner onboarding opens shortly (within the next week). To be first in line, join the [Discord](https://discord.gg/xJ9JKPMJQD).
-
 ## Introduction
 
 The Quantum Compute subnet is unlike any other subnet on Bittensor. It taps into Bittensor's decentralized incentive mechanism to make one of the world's most powerful, scarce, and most expensive resources—quantum computers—available to users from all walks of life, who might otherwise not have access to them. For those who might have had access, they would not experiment freely due to prohibitive costs and limited availability. Now they can.
@@ -57,9 +55,11 @@ For the full incentive mechanism (dispatch, verification, and weight setting), r
 
 ## How to Mine
 
-Register a hotkey on netuid 48, stake at least 5,000 alpha to it, configure an account with a trusted quantum provider (Open Quantum is the first supported provider), and run the miner. The miner operator guide covers setup end to end:
+Register a hotkey on netuid 48, stake at least 5,000 alpha to it, configure an account with a trusted quantum provider (Open Quantum is the first supported provider), and run the miner. The miner operator guide covers setup, and the FAQ covers a miner that is running and idle:
 
 **→ [qbittensor/miner/README.md](qbittensor/miner/README.md)**
+
+**→ [qbittensor/miner/FAQ.md](qbittensor/miner/FAQ.md)**
 
 If you own or operate a quantum computer and want to sell capacity into the network, or you run a quantum platform and want to join the trusted-provider list, contact support@openquantum.com.
 
@@ -147,9 +147,11 @@ python neurons/validator.py \
 
 ## Miner setup
 
-See the dedicated miner operator guide:
+See the dedicated miner operator guide and the miner FAQ:
 
 **→ [qbittensor/miner/README.md](qbittensor/miner/README.md)**
+
+**→ [qbittensor/miner/FAQ.md](qbittensor/miner/FAQ.md)**
 
 ## Development
 

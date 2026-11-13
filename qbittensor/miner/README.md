@@ -1,8 +1,8 @@
-# Miner (*_COMING SOON_*)
+# Miner
 
-> **Coming soon — open mining.** Open mining is live on mainnet in a short validation period while we test the code end to end. Official miner onboarding opens shortly (within the next week). To be first in line, join the [Discord](https://discord.gg/xJ9JKPMJQD).
+The miner (`neurons/miner.py`) receives circuit jobs from validators, submits them through a provider adapter, uploads results, and reports status on a later validator query. Open Quantum signs a certificate over each completed run. Validators accept a result only when that certificate matches the job.
 
-The miner (`neurons/miner.py`) provides **gate-based quantum compute** capacity to the Open Quantum platform. It receives circuit jobs from validators over Bittensor synapses, submits them through a **provider adapter**, uploads results, and reports status back on a later validator query.
+If the process is up and no jobs arrive, use the [miner FAQ](FAQ.md).
 
 You do not need to own quantum hardware: miners execute jobs through a **trusted quantum provider** (see the root [README.md](../../README.md)). Open Quantum is the first supported provider (`PROVIDER=openquantum` below). QPU owners and operators who want to supply hardware-backed capacity can contact support@openquantum.com.
 
@@ -28,8 +28,8 @@ The miner:
 - Python **3.12+** and an editable install of this repo (`pip install -e .` from the root; pins **Bittensor SDK v11**).
 - Network access to Open Quantum (jobs, scheduler, management, tensorauth, telemetry — see `qbittensor/utils/env.py`).
 - A registered hotkey on **netuid 48**.
-- At least **5000 alpha** staked on that hotkey. Validators query miners below the floor and assign new jobs only to miners at or above it. The floor is the validator setting `WEIGHT_MIN_MINER_STAKE_ALPHA` (default 5000).
-- `PUBLIC_BACKEND_CLASSES` set to the classes this miner accepts. An empty list advertises nothing, and no jobs are placed.
+- At least **5000 alpha** staked on that hotkey. Validators query miners below the floor and assign new jobs only to miners at or above it. The floor is the validator setting `WEIGHT_MIN_MINER_STAKE_ALPHA` (default 5000). A larger stake receives more of the jobs.
+- `PUBLIC_BACKEND_CLASSES` optional. When unset, the miner accepts `iqm:garnet`, `aqt:ibex-q1`, `ionq:forte-1`, `rigetti:cepheus-1-108q`, `iqm:emerald`, and `ionq:forte-ent`. Set the variable to replace that list.
 - `--axon.external_ip` set to a public address validators can dial (see entry point below).
 - `--axon.ip` set to the address this process binds. Miners on one machine share a port only when each binds a different address. The port defaults to 8091.
 - 20 GB free on the data-directory disk for a neuron-ops install.
@@ -57,14 +57,17 @@ Submits each accepted circuit to Open Quantum on the class the validator sent. T
 
 Provider status is stored locally and returned on the next validator query.
 
-If the organization balance is below `OPENQUANTUM_MIN_CREDITS` (default 50), the miner rate-limits new synapses.
+If the organization balance is below `OPENQUANTUM_MIN_CREDITS` (default 50), the miner refuses new jobs until the balance is restored.
+
+Leave `OPENQUANTUM_DRY_RUN` unset or `0`. A dry run returns no certificate, and a job without a certificate does not complete.
+
+The miner does not create the certificate. Open Quantum returns a signed proof with the completed result. The miner sends that proof back with the same result bytes. A missing proof, a proof that does not match the job, or a proof reused on another job is rejected, and that validator skips the miner for 24 hours. Hold the circuit, the shot count, and the backend class as the validator sent them. Stay up while a job is in flight. A miner that stops answering for about 45 minutes fails that job, and the validator that assigned it skips the miner for 24 hours.
 
 ```bash
 export PROVIDER=openquantum
 export OPENQUANTUM_ORGANIZATION_ID=<uuid>
 export OPENQUANTUM_CLIENT_ID=<sdk key id>
 export OPENQUANTUM_CLIENT_SECRET=<sdk key secret>
-export PUBLIC_BACKEND_CLASSES=<classes this miner accepts>
 export OPENQUANTUM_MIN_CREDITS=50
 export OPENQUANTUM_SCHEDULER_URL=https://scheduler.openquantum.com
 export OPENQUANTUM_MANAGEMENT_URL=https://management.openquantum.com

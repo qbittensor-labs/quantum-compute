@@ -172,7 +172,7 @@ class OpenQuantumAdapter:
         return self.should_rate_limit()
 
     def list_public_classes(self) -> List[str]:
-        """Classes from PUBLIC_BACKEND_CLASSES. Empty means not placeable."""
+        """Classes from PUBLIC_BACKEND_CLASSES. Unset uses the classes Open Quantum runs today."""
         from qbittensor.miner.providers.base import list_public_classes_from_env
 
         return list_public_classes_from_env()
